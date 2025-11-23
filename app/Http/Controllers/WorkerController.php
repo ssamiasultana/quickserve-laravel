@@ -23,7 +23,8 @@ class WorkerController extends Controller
 
             'service_type' => 'required|array',
             'service_type.*' => 'string|max:255',
-            'expertise_of_service' => 'required|integer|max:255',
+            'expertise_of_service' => 'required|array',
+            'expertise_of_service.*' => 'integer|min:1|max:5',
             'shift' => 'required|string|max:100',
             'rating' => 'nullable|numeric|min:0|max:5|between:0,5',
             'feedback' => 'nullable|string',
@@ -39,19 +40,27 @@ class WorkerController extends Controller
         }
 
         $validatedData = $validator->validated();
-        // if ($request->hasFile('image')) {
-        //     $image = $request->file('image');
-        //     $imageName = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
-
-        //     $imagePath = $image->storeAs('public/images/workers', $imageName);
-
-
-        //     $validatedData['image'] = 'storage/images/workers/' . $imageName;
-        // }
+        
 
         if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
             $validatedData['service_type'] = json_encode($validatedData['service_type']);
         }
+
+        if (isset($validatedData['service_ratings']) && is_array($validatedData['service_ratings'])) {
+            
+            $serviceTypes = json_decode($validatedData['service_type'], true);
+            foreach ($serviceTypes as $service) {
+                if (!isset($validatedData['service_ratings'][$service])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Please provide ratings for all selected services',
+                        'errors' => ['service_ratings' => ["Rating missing for service: $service"]]
+                    ], 422);
+                }
+            }
+        }
+
+        
         $worker = Worker::create($validatedData);
 
         return response()->json([
@@ -72,66 +81,66 @@ class WorkerController extends Controller
             'message' => 'Workers retrieved successfully'
         ]);
     }
-    public function createBulkWorkers(Request $request): JsonResponse
-    {
-        $workersData = $request->all();
+    // public function createBulkWorkers(Request $request): JsonResponse
+    // {
+    //     $workersData = $request->all();
 
-        if (!is_array($workersData)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid data format. Expected array of workers.'
-            ], 422);
-        }
+    //     if (!is_array($workersData)) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Invalid data format. Expected array of workers.'
+    //         ], 422);
+    //     }
 
-        $createdWorkers = [];
-        $errors = [];
+    //     $createdWorkers = [];
+    //     $errors = [];
 
-        foreach ($workersData as $index => $workerData) {
-            try {
-                $validator = Validator::make($workerData, [
-                    'name' => 'required|string|max:255',
-                    'email' => 'required|email|unique:workers,email',
-                    'phone' => 'nullable|string|max:20',
-                    'age' => 'required|integer|min:18',
-                    'image' => 'nullable|string',
+    //     foreach ($workersData as $index => $workerData) {
+    //         try {
+    //             $validator = Validator::make($workerData, [
+    //                 'name' => 'required|string|max:255',
+    //                 'email' => 'required|email|unique:workers,email',
+    //                 'phone' => 'nullable|string|max:20',
+    //                 'age' => 'required|integer|min:18',
+    //                 'image' => 'nullable|string',
 
-                    'service_type' => 'required|array',
-                    'service_type.*' => 'string|max:255',
-                    'expertise_of_service' => 'required|integer|max:255',
-                    'shift' => 'required|string|max:100',
-                    'rating' => 'nullable|numeric|min:0|max:5',
-                    'feedback' => 'nullable|string',
+    //                 'service_type' => 'required|array',
+    //                 'service_type.*' => 'string|max:255',
+    //                 'expertise_of_service' => 'required|integer|max:255',
+    //                 'shift' => 'required|string|max:100',
+    //                 'rating' => 'nullable|numeric|min:0|max:5',
+    //                 'feedback' => 'nullable|string',
 
-                    'is_active' => 'boolean'
-                ]);
+    //                 'is_active' => 'boolean'
+    //             ]);
 
-                if ($validator->fails()) {
-                    $errors[$index] = $validator->errors()->toArray();
-                    continue;
-                }
+    //             if ($validator->fails()) {
+    //                 $errors[$index] = $validator->errors()->toArray();
+    //                 continue;
+    //             }
 
-                $validatedData = $validator->validated();
+    //             $validatedData = $validator->validated();
 
-                // Convert service_type array to JSON string for database
-                if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
-                    $validatedData['service_type'] = json_encode($validatedData['service_type']);
-                }
+    //             // Convert service_type array to JSON string for database
+    //             if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
+    //                 $validatedData['service_type'] = json_encode($validatedData['service_type']);
+    //             }
 
-                $worker = Worker::create($validatedData);
-                $createdWorkers[] = $worker;
+    //             $worker = Worker::create($validatedData);
+    //             $createdWorkers[] = $worker;
 
-            } catch (\Exception $e) {
-                $errors[$index] = $e->getMessage();
-            }
-        }
+    //         } catch (\Exception $e) {
+    //             $errors[$index] = $e->getMessage();
+    //         }
+    //     }
 
-        return response()->json([
-            'success' => true,
-            'data' => $createdWorkers,
-            'errors' => $errors,
-            'message' => 'Bulk worker creation completed. Created: ' . count($createdWorkers) . ', Errors: ' . count($errors)
-        ], 201);
-    }
+    //     return response()->json([
+    //         'success' => true,
+    //         'data' => $createdWorkers,
+    //         'errors' => $errors,
+    //         'message' => 'Bulk worker creation completed. Created: ' . count($createdWorkers) . ', Errors: ' . count($errors)
+    //     ], 201);
+    // }
 
     public function updateWorker(Request $request, $id): JsonResponse
     {
@@ -154,6 +163,7 @@ class WorkerController extends Controller
             'service_type' => 'sometimes|array',
             'service_type.*' => 'string|max:255',
             'expertise_of_service' => 'sometimes|integer|max:255',
+            'expertise_of_service.*' => 'integer|min:1|max:5',
             'shift' => 'sometimes|string|max:100',
             'rating' => 'nullable|numeric|min:0|max:5|between:0,5',
             'feedback' => 'nullable|string',
@@ -174,6 +184,10 @@ class WorkerController extends Controller
         // Handle service_type array to JSON conversion
         if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
             $validatedData['service_type'] = json_encode($validatedData['service_type']);
+        }
+
+        if (isset($validatedData['service_ratings']) && is_array($validatedData['service_ratings'])) {
+            $validatedData['service_ratings'] = json_encode($validatedData['service_ratings']);
         }
 
         $worker->update($validatedData);

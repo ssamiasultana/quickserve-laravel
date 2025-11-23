@@ -27,6 +27,7 @@ class Worker extends Model
     protected $casts = [
         'service_type' => 'array',
         'rating' => 'decimal:2',
-        'is_active' => 'boolean'
+        'is_active' => 'boolean',
+        'expertise_of_service' => 'array'
     ];
 }
