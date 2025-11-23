@@ -14,7 +14,7 @@ return new class extends Migration
     public function up()
     {
         //
-        $table->json('expertise_of_service')->change();
+        //$table->json('expertise_of_service')->change();
     }
 
     /**
@@ -25,7 +25,7 @@ return new class extends Migration
     public function down()
     {
         //
-         $table->text('expertise_of_service')->change();
+         //$table->text('expertise_of_service')->change();
 
     }
 };

@@ -24,7 +24,6 @@ return new class extends Migration
            
             $table->json('service_type'); 
             $table->json('expertise_of_service');
-            $table->integer('expertise_of_service'); 
             $table->string('shift');
             $table->decimal('rating', 2, 1)->default(0);
             $table->text('feedback')->nullable(); 
