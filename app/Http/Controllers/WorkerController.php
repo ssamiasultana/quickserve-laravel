@@ -26,7 +26,7 @@ class WorkerController extends Controller
             'expertise_of_service' => 'required|array',
             'expertise_of_service.*' => 'integer|min:1|max:5',
             'shift' => 'required|string|max:100',
-            'rating' => 'nullable|numeric|min:0|max:5|between:0,5',
+
             'feedback' => 'nullable|string',
 
             'is_active' => 'boolean',
@@ -40,14 +40,14 @@ class WorkerController extends Controller
         }
 
         $validatedData = $validator->validated();
-        
+
 
         if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
             $validatedData['service_type'] = json_encode($validatedData['service_type']);
         }
 
         if (isset($validatedData['service_ratings']) && is_array($validatedData['service_ratings'])) {
-            
+
             $serviceTypes = json_decode($validatedData['service_type'], true);
             foreach ($serviceTypes as $service) {
                 if (!isset($validatedData['service_ratings'][$service])) {
@@ -60,7 +60,7 @@ class WorkerController extends Controller
             }
         }
 
-        
+
         $worker = Worker::create($validatedData);
 
         return response()->json([
@@ -165,7 +165,7 @@ class WorkerController extends Controller
             'expertise_of_service' => 'sometimes|integer|max:255',
             'expertise_of_service.*' => 'integer|min:1|max:5',
             'shift' => 'sometimes|string|max:100',
-            'rating' => 'nullable|numeric|min:0|max:5|between:0,5',
+
             'feedback' => 'nullable|string',
 
             'is_active' => 'sometimes|boolean',

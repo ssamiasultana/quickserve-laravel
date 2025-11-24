@@ -15,11 +15,11 @@ class Worker extends Model
         'phone',
         'image',
         'age',
-       
+
         'service_type',
         'expertise_of_service',
         'shift',
-        'rating',
+
         'feedback',
         'is_active',
         'address'
