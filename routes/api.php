@@ -34,6 +34,7 @@ Route::controller(WorkerController::class)->group(function () {
     Route::post('/workers', 'createWorker');
     Route::put('/workers/{id}','updateWorker');
     Route::delete('/workers/{id}',  'deleteWorker');
+    Route::get('/workers/{id}', 'getSingleWorker');
 });
 
 Route::controller(ServiceController::class)->group(function () {

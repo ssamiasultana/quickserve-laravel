@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 
+
 class WorkerController extends Controller
 {
     public function createWorker(Request $request): JsonResponse
@@ -81,96 +82,37 @@ class WorkerController extends Controller
             'message' => 'Workers retrieved successfully'
         ]);
     }
-    // public function createBulkWorkers(Request $request): JsonResponse
-    // {
-    //     $workersData = $request->all();
-
-    //     if (!is_array($workersData)) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Invalid data format. Expected array of workers.'
-    //         ], 422);
-    //     }
-
-    //     $createdWorkers = [];
-    //     $errors = [];
-
-    //     foreach ($workersData as $index => $workerData) {
-    //         try {
-    //             $validator = Validator::make($workerData, [
-    //                 'name' => 'required|string|max:255',
-    //                 'email' => 'required|email|unique:workers,email',
-    //                 'phone' => 'nullable|string|max:20',
-    //                 'age' => 'required|integer|min:18',
-    //                 'image' => 'nullable|string',
-
-    //                 'service_type' => 'required|array',
-    //                 'service_type.*' => 'string|max:255',
-    //                 'expertise_of_service' => 'required|integer|max:255',
-    //                 'shift' => 'required|string|max:100',
-    //                 'rating' => 'nullable|numeric|min:0|max:5',
-    //                 'feedback' => 'nullable|string',
-
-    //                 'is_active' => 'boolean'
-    //             ]);
-
-    //             if ($validator->fails()) {
-    //                 $errors[$index] = $validator->errors()->toArray();
-    //                 continue;
-    //             }
-
-    //             $validatedData = $validator->validated();
-
-    //             // Convert service_type array to JSON string for database
-    //             if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
-    //                 $validatedData['service_type'] = json_encode($validatedData['service_type']);
-    //             }
-
-    //             $worker = Worker::create($validatedData);
-    //             $createdWorkers[] = $worker;
-
-    //         } catch (\Exception $e) {
-    //             $errors[$index] = $e->getMessage();
-    //         }
-    //     }
-
-    //     return response()->json([
-    //         'success' => true,
-    //         'data' => $createdWorkers,
-    //         'errors' => $errors,
-    //         'message' => 'Bulk worker creation completed. Created: ' . count($createdWorkers) . ', Errors: ' . count($errors)
-    //     ], 201);
-    // }
+   
 
     public function updateWorker(Request $request, $id): JsonResponse
     {
         $worker = Worker::find($id);
-
+    
         if (!$worker) {
             return response()->json([
                 'success' => false,
                 'message' => 'Worker not found'
             ], 404);
         }
-
+        
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:workers,email,' . $id,
             'phone' => 'nullable|string|max:20',
             'age' => 'sometimes|integer|min:18',
             'image' => 'nullable|string',
-
+    
             'service_type' => 'sometimes|array',
             'service_type.*' => 'string|max:255',
-            'expertise_of_service' => 'sometimes|integer|max:255',
-            'expertise_of_service.*' => 'integer|min:1|max:5',
+            'expertise_of_service' => 'sometimes|array',
+            'expertise_of_service.*' => 'integer|min:0|max:5', // min:1 থেকে min:0 করুন
             'shift' => 'sometimes|string|max:100',
-
+            'rating' => 'nullable|numeric|min:0|max:5', // rating field যোগ করুন
             'feedback' => 'nullable|string',
-
+    
             'is_active' => 'sometimes|boolean',
         ]);
-
+       
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -178,20 +120,21 @@ class WorkerController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-
+    
         $validatedData = $validator->validated();
-
+    
         // Handle service_type array to JSON conversion
         if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
             $validatedData['service_type'] = json_encode($validatedData['service_type']);
         }
-
-        if (isset($validatedData['service_ratings']) && is_array($validatedData['service_ratings'])) {
-            $validatedData['service_ratings'] = json_encode($validatedData['service_ratings']);
+    
+        // Handle expertise_of_service array to JSON conversion - এই লাইন uncomment করুন
+        if (isset($validatedData['expertise_of_service']) && is_array($validatedData['expertise_of_service'])) {
+            $validatedData['expertise_of_service'] = json_encode($validatedData['expertise_of_service']);
         }
-
+    
         $worker->update($validatedData);
-
+    
         return response()->json([
             'success' => true,
             'data' => $worker,
@@ -215,5 +158,51 @@ class WorkerController extends Controller
             'success' => true,
             'message' => 'Worker deleted successfully'
         ]);
+    }
+    
+    public function getSingleWorker(Request $request,$id):JsonResponse{
+        $worker = Worker::find($id);
+    
+        if (!$worker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Worker not found'
+            ], 404);
+        }
+        $workerData = $worker->toArray();
+        if (isset($workerData['service_type']) && is_string($workerData['service_type'])) {
+            try {
+                $workerData['service_type'] = json_decode($workerData['service_type'], true);
+            } catch (\Exception $e) {
+                
+                $workerData['service_type'] = [];
+            }
+        }
+
+      
+        if (isset($workerData['expertise_of_service']) && is_string($workerData['expertise_of_service'])) {
+            try {
+                $workerData['expertise_of_service'] = json_decode($workerData['expertise_of_service'], true);
+            } catch (\Exception $e) {
+                // If JSON decode fails, keep as is or set to empty array
+                $workerData['expertise_of_service'] = [];
+            }
+        }
+
+       
+        if (!isset($workerData['service_type']) || !is_array($workerData['service_type'])) {
+            $workerData['service_type'] = [];
+        }
+
+        if (!isset($workerData['expertise_of_service']) || !is_array($workerData['expertise_of_service'])) {
+            $workerData['expertise_of_service'] = [];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $workerData,
+            'message' => 'Worker retrieved successfully'
+        ]);
+    
     }
 }
