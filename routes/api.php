@@ -28,20 +28,40 @@ Route::post('/signup', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 
-
-Route::controller(WorkerController::class)->group(function () {
-    Route::get('/getWorkers', 'getAllWorkers');
-    Route::post('/workers', 'createWorker');
-    Route::put('/workers/{id}','updateWorker');
-    Route::delete('/workers/{id}',  'deleteWorker');
-    Route::get('/workers/{id}', 'getSingleWorker');
+Route::middleware(['jwt.auth'])->group(function () {
+    // Worker profile routes
+    Route::get('/worker/check-profile', [WorkerController::class, 'checkProfile']);
+    
+    // Worker CRUD routes
+    Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);
+    Route::post('/workers', [WorkerController::class, 'createWorker']);
+    Route::put('/workers/{id}', [WorkerController::class, 'updateWorker']);
+    Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
+    Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
+    
+    // Service routes
+    Route::post('/services', [ServiceController::class, 'createServices']);
+    Route::get('/getServices', [ServiceController::class, 'getServices']);
+    Route::put('/services/{id}', [ServiceController::class, 'updateServices']);
+    Route::delete('/services/{id}', [ServiceController::class, 'deleteServices']);
+    
+    // Bulk workers
+    Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
 });
+// Route::controller(WorkerController::class)->group(function () {
+//     Route::get('/getWorkers', 'getAllWorkers');
+//     Route::post('/workers', 'createWorker');
+//     Route::put('/workers/{id}','updateWorker');
+//     Route::delete('/workers/{id}',  'deleteWorker');
+//     Route::get('/workers/{id}', 'getSingleWorker');
+//     Route::get('/worker/check-profile',  'checkProfile');
+// });
 
-Route::controller(ServiceController::class)->group(function () {
-    Route::post('/services', 'createServices');
-    Route::get('/getServices','getServices');
-    Route::put('/services/{id}',  'updateServices');
-    Route::delete('/services/{id}',  'deleteServices');
-});
+// Route::controller(ServiceController::class)->group(function () {
+//     Route::post('/services', 'createServices');
+//     Route::get('/getServices','getServices');
+//     Route::put('/services/{id}',  'updateServices');
+//     Route::delete('/services/{id}',  'deleteServices');
+// });
 
 Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);

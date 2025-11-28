@@ -7,7 +7,8 @@ use App\Models\Worker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
-
+use Illuminate\Support\Facades\Auth;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class WorkerController extends Controller
 {
@@ -205,4 +206,46 @@ class WorkerController extends Controller
         ]);
     
     }
+    public function checkProfile(Request $request)
+    {
+        $user = JWTAuth::parseToken()->authenticate();
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'exists' => false,
+                'isComplete' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+        
+        $worker = Worker::where('user_id', $user->id)->first();
+        
+        if (!$worker) {
+            return response()->json([
+                'success' => true,
+                'exists' => false,
+                'isComplete' => false,
+                'message' => 'Complete your info to get your job'
+            ]);
+        }
+        
+        // Check if required fields are filled
+        $requiredFields = ['name', 'phone', 'address', 'email', 'age', 'service_type', 'expertise_of_service', 'shift', 'is_active'];
+        $isComplete = true;
+        
+        foreach ($requiredFields as $field) {
+            if (empty($worker->$field)) {
+                $isComplete = false;
+                break;
+            }
+        }
+        
+        return response()->json([
+            'success' => true,
+            'exists' => true,
+            'isComplete' => $isComplete,
+            'message' => $isComplete ? 'Profile is complete' : 'Complete your info to get your job',
+            'worker' => $worker
+        ]);
+}
 }
