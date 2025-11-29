@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Http\JsonResponse;
 
 class AuthController extends Controller
 {
@@ -112,5 +113,13 @@ class AuthController extends Controller
         }
     }
 
+    public function getAllUsers(): JsonResponse
+{
+    $users = User::select('id', 'name', 'email','role')->get();
     
+    return response()->json([
+        'success' => true,
+        'data' => $users
+    ]);
+}
 }

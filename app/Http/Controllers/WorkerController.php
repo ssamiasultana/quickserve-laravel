@@ -15,8 +15,18 @@ class WorkerController extends Controller
     public function createWorker(Request $request): JsonResponse
     {
 
+        $authenticatedUser = auth()->user(); 
+        if (!$authenticatedUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized - User not authenticated'
+            ], 401);
+        }
+    
 
         $validator = Validator::make($request->all(), [
+            'user_id' => 'nullable|integer|exists:users,id',
+
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:workers,email',
             'phone' => 'nullable|string|max:20',
@@ -43,6 +53,24 @@ class WorkerController extends Controller
 
         $validatedData = $validator->validated();
 
+        if($request->has('user_id') && $request->user_id){
+            if(!$authenticatedUser->isAdmin()) { 
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - Only admins can assign worker profiles to other users'
+                ], 403);
+            }
+            $validatedData['user_id'] = $request->user_id;
+        } else {
+            $validatedData['user_id'] = $authenticatedUser->id;
+        }
+        $existingWorker = Worker::where('user_id', $validatedData['user_id'])->first();
+    if ($existingWorker) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Worker profile already exists for this user'
+        ], 409);
+        }
 
         if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
             $validatedData['service_type'] = json_encode($validatedData['service_type']);
@@ -62,6 +90,7 @@ class WorkerController extends Controller
             }
         }
 
+        
 
         $worker = Worker::create($validatedData);
 
@@ -230,7 +259,7 @@ class WorkerController extends Controller
         }
         
         // Check if required fields are filled
-        $requiredFields = ['name', 'phone', 'address', 'email', 'age', 'service_type', 'expertise_of_service', 'shift', 'is_active'];
+        $requiredFields = ['name', 'phone', 'email', 'age', 'service_type', 'expertise_of_service', 'shift', 'is_active'];
         $isComplete = true;
         
         foreach ($requiredFields as $field) {
