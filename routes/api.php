@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\PasswordResetController; 
 
 /*
 |--------------------------------------------------------------------------
@@ -65,5 +66,9 @@ Route::middleware(['jwt.auth'])->group(function () {
 //     Route::put('/services/{id}',  'updateServices');
 //     Route::delete('/services/{id}',  'deleteServices');
 // });
+
+Route::post('/password/forgot', [PasswordResetController::class, 'forgotPassword']);
+Route::post('/password/reset', [PasswordResetController::class, 'resetPassword']);
+Route::get('/password/reset/{token}', [PasswordResetController::class, 'verifyToken']);
 
 Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
