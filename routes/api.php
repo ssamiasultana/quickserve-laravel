@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\PasswordResetController; 
+use App\Http\Controllers\CustomerController;
 
 /*
 |--------------------------------------------------------------------------
@@ -51,22 +52,12 @@ Route::middleware(['jwt.auth'])->group(function () {
     // Bulk workers
     Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
 });
-// Route::controller(WorkerController::class)->group(function () {
-//     Route::get('/getWorkers', 'getAllWorkers');
-//     Route::post('/workers', 'createWorker');
-//     Route::put('/workers/{id}','updateWorker');
-//     Route::delete('/workers/{id}',  'deleteWorker');
-//     Route::get('/workers/{id}', 'getSingleWorker');
-//     Route::get('/worker/check-profile',  'checkProfile');
-// });
 
-// Route::controller(ServiceController::class)->group(function () {
-//     Route::post('/services', 'createServices');
-//     Route::get('/getServices','getServices');
-//     Route::put('/services/{id}',  'updateServices');
-//     Route::delete('/services/{id}',  'deleteServices');
-// });
+// Customer routes
+Route::get('/customers', [CustomerController::class, 'getAllCustomers']);
+Route::get('/customers/paginated', [CustomerController::class, 'getPaginated']);
 
+// Password reset routes
 Route::post('/password/forgot', [PasswordResetController::class, 'forgotPassword']);
 Route::post('/password/reset', [PasswordResetController::class, 'resetPassword']);
 Route::get('/password/reset/{token}', [PasswordResetController::class, 'verifyToken']);
