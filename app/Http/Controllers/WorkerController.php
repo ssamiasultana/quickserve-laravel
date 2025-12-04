@@ -277,4 +277,26 @@ class WorkerController extends Controller
             'worker' => $worker
         ]);
 }
+
+public function getPaginated(Request $request)
+{
+    $perPage = $request->input('per_page', 10);
+    
+    $workers = Worker::paginate($perPage);
+    return response()->json([
+        'success' => true,
+        'data' => $workers->items(),
+        'pagination' => [
+            'total' => $workers->total(),
+            'per_page' => $workers->perPage(),
+            'current_page' => $workers->currentPage(),
+            'last_page' => $workers->lastPage(),
+            'from' => $workers->firstItem(),
+            'to' => $workers->lastItem(),
+        ],
+        'message' => 'Workers retrieved successfully'
+    ], 200);
+}
+
+
 }

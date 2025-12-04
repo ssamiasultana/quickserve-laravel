@@ -39,10 +39,10 @@ Route::middleware(['jwt.auth'])->group(function () {
     // Worker CRUD routes
     Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);
     Route::post('/workers', [WorkerController::class, 'createWorker']);
+    Route::get('/workers/paginated', [WorkerController::class, 'getPaginated']);
     Route::put('/workers/{id}', [WorkerController::class, 'updateWorker']);
     Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
     Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
-    
     // Service routes
     Route::post('/services', [ServiceController::class, 'createServices']);
     Route::get('/getServices', [ServiceController::class, 'getServices']);
