@@ -298,5 +298,39 @@ public function getPaginated(Request $request)
     ], 200);
 }
 
+public function searchWorkers(Request $request)
+{
+    $query = Worker::query();
+    
+    $searchTerm = trim($request->input('search', ''));
+    
+    if (!empty($searchTerm)) {
+        $query->where(function($q) use ($searchTerm) {
+          
+            $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+              ->orWhereRaw('LOWER(service_type) LIKE ?', ['%' . strtolower($searchTerm) . '%']);
+            
+          
+        });
+    }
+    
+    if ($request->has('service') && !empty(trim($request->service))) {
+        $service = trim($request->service);
+        $query->whereRaw('LOWER(service_type) LIKE ?', ['%' . strtolower($service) . '%']);
+    }
+    
+    
+    $workers = $query->get();
+    
+    return response()->json([
+        'success' => true,
+        'data' => $workers,
+        'count' => $workers->count(),
+        'search_term' => $searchTerm,
+        'message' => $workers->isEmpty() 
+            ? 'No workers found matching your search' 
+            : 'Workers retrieved successfully'
+    ], 200);
+}
 
 }
