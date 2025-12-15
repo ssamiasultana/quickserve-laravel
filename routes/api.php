@@ -10,6 +10,8 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\PasswordResetController; 
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\ServiceCategoryController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -62,5 +64,12 @@ Route::get('/customers/paginated', [CustomerController::class, 'getPaginated']);
 Route::post('/password/forgot', [PasswordResetController::class, 'forgotPassword']);
 Route::post('/password/reset', [PasswordResetController::class, 'resetPassword']);
 Route::get('/password/reset/{token}', [PasswordResetController::class, 'verifyToken']);
+
+
+Route::prefix('service-subcategories')->group(function () {
+    Route::get('/', [ServiceCategoryController::class, 'getServicecategory']);
+    Route::post('/', [ServiceCategoryController::class, 'createServiceCategory']);
+   
+});
 
 Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);

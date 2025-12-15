@@ -8,7 +8,12 @@ use Illuminate\Database\Eloquent\Model;
 class Services extends Model
 {
     use HasFactory;
+    protected $table = 'services';
     protected $fillable =[
         'name',
     ];
+    public function subcategories()
+    {
+        return $this->hasMany(ServiceSubcategory::class, 'service_id');
+    }
 }
