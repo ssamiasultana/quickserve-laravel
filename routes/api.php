@@ -69,6 +69,7 @@ Route::get('/password/reset/{token}', [PasswordResetController::class, 'verifyTo
 Route::prefix('service-subcategories')->group(function () {
     Route::get('/', [ServiceCategoryController::class, 'getServicecategory']);
     Route::post('/', [ServiceCategoryController::class, 'createServiceCategory']);
+    Route::get('/{id}',[ServiceCategoryController::class,'getServicecategoryById']);
    
 });
 

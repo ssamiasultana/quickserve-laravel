@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\ServiceSubcategory;
+use App\Models\Services;
 use Illuminate\Support\Facades\Validator;
 
 class ServiceCategoryController extends Controller
@@ -41,4 +42,27 @@ class ServiceCategoryController extends Controller
         ], 200);
     }
 
-}
+    public function getServicecategoryById(Request $request,$service_id){
+        $subServices = ServiceSubcategory::where('service_id', $service_id)->get();
+    
+        if (!$subServices) {
+            return response()->json([
+                'success' => false,
+                'message' => 'sub services not found'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $subServices,
+            'message' => 'sub services retrieved successfully'
+        ]);
+    
+    }
+
+
+    }
+    
+    
+
+
