@@ -14,7 +14,6 @@ class WorkerController extends Controller
 {
     public function createWorker(Request $request): JsonResponse
     {
-
         $authenticatedUser = auth()->user(); 
         if (!$authenticatedUser) {
             return response()->json([
@@ -22,27 +21,24 @@ class WorkerController extends Controller
                 'message' => 'Unauthorized - User not authenticated'
             ], 401);
         }
-    
 
         $validator = Validator::make($request->all(), [
             'user_id' => 'nullable|integer|exists:users,id',
-
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:workers,email',
             'phone' => 'nullable|string|max:20',
             'age' => 'required|integer|min:18',
             'image' => 'nullable|string',
-
-            'service_type' => 'required|array',
-            'service_type.*' => 'string|max:255',
-            'expertise_of_service' => 'required|array',
+            'service_ids' => 'required|array|min:1',
+            'service_ids.*' => 'exists:services,id',
+            'expertise_of_service' => 'required|array|min:1',
             'expertise_of_service.*' => 'integer|min:1|max:5',
             'shift' => 'required|string|max:100',
-
             'feedback' => 'nullable|string',
-
             'is_active' => 'boolean',
+            'address' => 'nullable|string',
         ]);
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -53,6 +49,7 @@ class WorkerController extends Controller
 
         $validatedData = $validator->validated();
 
+        // Handle user_id assignment
         if($request->has('user_id') && $request->user_id){
             if(!$authenticatedUser->isAdmin()) { 
                 return response()->json([
@@ -64,42 +61,34 @@ class WorkerController extends Controller
         } else {
             $validatedData['user_id'] = $authenticatedUser->id;
         }
+
+        // Check if worker already exists for this user
         $existingWorker = Worker::where('user_id', $validatedData['user_id'])->first();
-    if ($existingWorker) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Worker profile already exists for this user'
-        ], 409);
+        if ($existingWorker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Worker profile already exists for this user'
+            ], 409);
         }
 
-        if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
-            $validatedData['service_type'] = json_encode($validatedData['service_type']);
-        }
+        // Extract service_ids before creating worker
+        $serviceIds = $validatedData['service_ids'];
+        unset($validatedData['service_ids']);
 
-        if (isset($validatedData['service_ratings']) && is_array($validatedData['service_ratings'])) {
-
-            $serviceTypes = json_decode($validatedData['service_type'], true);
-            foreach ($serviceTypes as $service) {
-                if (!isset($validatedData['service_ratings'][$service])) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Please provide ratings for all selected services',
-                        'errors' => ['service_ratings' => ["Rating missing for service: $service"]]
-                    ], 422);
-                }
-            }
-        }
-
-        
-
+        // Create worker
         $worker = Worker::create($validatedData);
+
+        // Attach services to worker
+        $worker->services()->attach($serviceIds);
+
+        // Load services relationship
+        $worker->load('services');
 
         return response()->json([
             'success' => true,
             'data' => $worker,
             'message' => 'Worker created successfully'
         ], 201);
-
     }
 
     public function getAllWorkers(): JsonResponse
@@ -131,16 +120,15 @@ class WorkerController extends Controller
             'phone' => 'nullable|string|max:20',
             'age' => 'sometimes|integer|min:18',
             'image' => 'nullable|string',
-    
-            'service_type' => 'sometimes|array',
-            'service_type.*' => 'string|max:255',
+            'service_ids' => 'sometimes|array|min:1',
+            'service_ids.*' => 'exists:services,id',
             'expertise_of_service' => 'sometimes|array',
-            'expertise_of_service.*' => 'integer|min:0|max:5', // min:1 থেকে min:0 করুন
+            'expertise_of_service.*' => 'integer|min:0|max:5',
             'shift' => 'sometimes|string|max:100',
-            'rating' => 'nullable|numeric|min:0|max:5', // rating field যোগ করুন
+            'rating' => 'nullable|numeric|min:0|max:5',
             'feedback' => 'nullable|string',
-    
             'is_active' => 'sometimes|boolean',
+            'address' => 'nullable|string',
         ]);
        
         if ($validator->fails()) {
@@ -152,18 +140,21 @@ class WorkerController extends Controller
         }
     
         $validatedData = $validator->validated();
-    
-        // Handle service_type array to JSON conversion
-        if (isset($validatedData['service_type']) && is_array($validatedData['service_type'])) {
-            $validatedData['service_type'] = json_encode($validatedData['service_type']);
+
+        // Handle service_ids separately
+        if (isset($validatedData['service_ids'])) {
+            $serviceIds = $validatedData['service_ids'];
+            unset($validatedData['service_ids']);
+            
+            // Sync services (replaces all existing services)
+            $worker->services()->sync($serviceIds);
         }
-    
-        // Handle expertise_of_service array to JSON conversion - এই লাইন uncomment করুন
-        if (isset($validatedData['expertise_of_service']) && is_array($validatedData['expertise_of_service'])) {
-            $validatedData['expertise_of_service'] = json_encode($validatedData['expertise_of_service']);
-        }
-    
+
+        // Update worker data
         $worker->update($validatedData);
+
+        // Load services relationship
+        $worker->load('services');
     
         return response()->json([
             'success' => true,
@@ -171,6 +162,7 @@ class WorkerController extends Controller
             'message' => 'Worker updated successfully'
         ]);
     }
+
     public function deleteWorker($id): JsonResponse
     {
         $worker = Worker::find($id);
@@ -191,46 +183,17 @@ class WorkerController extends Controller
     }
     
     public function getSingleWorker(Request $request,$id):JsonResponse{
-        $worker = Worker::find($id);
-    
+        $worker = Worker::with('services')->find($id);    
         if (!$worker) {
             return response()->json([
                 'success' => false,
                 'message' => 'Worker not found'
             ], 404);
         }
-        $workerData = $worker->toArray();
-        if (isset($workerData['service_type']) && is_string($workerData['service_type'])) {
-            try {
-                $workerData['service_type'] = json_decode($workerData['service_type'], true);
-            } catch (\Exception $e) {
-                
-                $workerData['service_type'] = [];
-            }
-        }
-
-      
-        if (isset($workerData['expertise_of_service']) && is_string($workerData['expertise_of_service'])) {
-            try {
-                $workerData['expertise_of_service'] = json_decode($workerData['expertise_of_service'], true);
-            } catch (\Exception $e) {
-                // If JSON decode fails, keep as is or set to empty array
-                $workerData['expertise_of_service'] = [];
-            }
-        }
-
-       
-        if (!isset($workerData['service_type']) || !is_array($workerData['service_type'])) {
-            $workerData['service_type'] = [];
-        }
-
-        if (!isset($workerData['expertise_of_service']) || !is_array($workerData['expertise_of_service'])) {
-            $workerData['expertise_of_service'] = [];
-        }
 
         return response()->json([
             'success' => true,
-            'data' => $workerData,
+            'data' => $worker,
             'message' => 'Worker retrieved successfully'
         ]);
     
@@ -247,7 +210,7 @@ class WorkerController extends Controller
             ], 401);
         }
         
-        $worker = Worker::where('user_id', $user->id)->first();
+        $worker = Worker::with('services')->where('user_id', $user->id)->first();
         
         if (!$worker) {
             return response()->json([
@@ -259,7 +222,7 @@ class WorkerController extends Controller
         }
         
         // Check if required fields are filled
-        $requiredFields = ['name', 'phone', 'email', 'age', 'service_type', 'expertise_of_service', 'shift', 'is_active'];
+        $requiredFields = ['name', 'phone', 'email', 'age', 'expertise_of_service', 'shift', 'is_active'];
         $isComplete = true;
         
         foreach ($requiredFields as $field) {
@@ -267,6 +230,11 @@ class WorkerController extends Controller
                 $isComplete = false;
                 break;
             }
+        }
+
+        // Check if worker has at least one service
+        if ($worker->services->isEmpty()) {
+            $isComplete = false;
         }
         
         return response()->json([
@@ -276,7 +244,7 @@ class WorkerController extends Controller
             'message' => $isComplete ? 'Profile is complete' : 'Complete your info to get your job',
             'worker' => $worker
         ]);
-}
+    }
 
 public function getPaginated(Request $request)
 {
@@ -299,38 +267,48 @@ public function getPaginated(Request $request)
 }
 
 public function searchWorkers(Request $request)
-{
-    $query = Worker::query();
-    
-    $searchTerm = trim($request->input('search', ''));
-    
-    if (!empty($searchTerm)) {
-        $query->where(function($q) use ($searchTerm) {
-          
-            $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
-              ->orWhereRaw('LOWER(service_type) LIKE ?', ['%' . strtolower($searchTerm) . '%']);
-            
-          
-        });
-    }
-    
-    if ($request->has('service') && !empty(trim($request->service))) {
-        $service = trim($request->service);
-        $query->whereRaw('LOWER(service_type) LIKE ?', ['%' . strtolower($service) . '%']);
-    }
-    
-    
-    $workers = $query->get();
-    
-    return response()->json([
-        'success' => true,
-        'data' => $workers,
-        'count' => $workers->count(),
-        'search_term' => $searchTerm,
-        'message' => $workers->isEmpty() 
-            ? 'No workers found matching your search' 
-            : 'Workers retrieved successfully'
-    ], 200);
-}
+    {
+        $query = Worker::with('services');
+        
+        $searchTerm = trim($request->input('search', ''));
+        
+        if (!empty($searchTerm)) {
+            $query->where(function($q) use ($searchTerm) {
+                $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+                  ->orWhereRaw('LOWER(email) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+                  ->orWhereHas('services', function($serviceQuery) use ($searchTerm) {
+                      $serviceQuery->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%']);
+                  });
+            });
+        }
+        
+        // Filter by specific service name
+        if ($request->has('service') && !empty(trim($request->service))) {
+            $service = trim($request->service);
+            $query->whereHas('services', function($serviceQuery) use ($service) {
+                $serviceQuery->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($service) . '%']);
+            });
+        }
 
+
+        
+        // Filter by shift
+        if ($request->has('shift') && !empty(trim($request->shift))) {
+            $query->where('shift', $request->shift);
+        }
+
+      
+        
+        $workers = $query->get();
+        
+        return response()->json([
+            'success' => true,
+            'data' => $workers,
+            'count' => $workers->count(),
+            'search_term' => $searchTerm,
+            'message' => $workers->isEmpty() 
+                ? 'No workers found matching your search' 
+                : 'Workers retrieved successfully'
+        ], 200);
+    }
 }

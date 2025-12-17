@@ -16,4 +16,9 @@ class Services extends Model
     {
         return $this->hasMany(ServiceSubcategory::class, 'service_id');
     }
+    public function workers()
+    {
+        return $this->belongsToMany(Worker::class, 'service_worker', 'service_id', 'worker_id')
+                    ->withTimestamps();
+    }
 }

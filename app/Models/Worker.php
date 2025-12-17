@@ -16,17 +16,13 @@ class Worker extends Model
         'phone',
         'image',
         'age',
-
-        'service_type',
         'expertise_of_service',
         'shift',
-
         'feedback',
         'is_active',
         'address'
     ];
     protected $casts = [
-        'service_type' => 'array',
         'rating' => 'decimal:2',
         'is_active' => 'boolean',
         'expertise_of_service' => 'array'
@@ -35,6 +31,12 @@ class Worker extends Model
     {
         return $this->belongsTo(User::class);
     }
+    public function services()
+    {
+        return $this->belongsToMany(Services::class, 'service_worker', 'worker_id', 'service_id')
+                    ->withTimestamps();
+    }
+    
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
