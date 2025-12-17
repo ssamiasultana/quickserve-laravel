@@ -93,7 +93,8 @@ class WorkerController extends Controller
 
     public function getAllWorkers(): JsonResponse
     {
-        $workers = Worker::all();
+        // $workers = Worker::all();
+        $workers = Worker::with('services')->get();
 
         return response()->json([
             'success' => true,
@@ -250,7 +251,7 @@ public function getPaginated(Request $request)
 {
     $perPage = $request->input('per_page', 10);
     
-    $workers = Worker::paginate($perPage);
+    $workers = Worker::with('services')->paginate($perPage);
     return response()->json([
         'success' => true,
         'data' => $workers->items(),
@@ -310,5 +311,19 @@ public function searchWorkers(Request $request)
                 ? 'No workers found matching your search' 
                 : 'Workers retrieved successfully'
         ], 200);
+    }
+
+    public function getWorkersByService($serviceId): JsonResponse
+    {
+        $workers = Worker::whereHas('services', function($query) use ($serviceId) {
+            $query->where('service_id', $serviceId);
+        })->with('services')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $workers,
+            'count' => $workers->count(),
+            'message' => 'Workers retrieved successfully'
+        ]);
     }
 }

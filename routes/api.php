@@ -46,6 +46,8 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::put('/workers/{id}', [WorkerController::class, 'updateWorker']);
     Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
     Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
+    Route::get('/workers/{serviceId}', [WorkerController::class, 'getWorkersByService']);
+
     // Service routes
     Route::post('/services', [ServiceController::class, 'createServices']);
     Route::get('/getServices', [ServiceController::class, 'getServices']);
