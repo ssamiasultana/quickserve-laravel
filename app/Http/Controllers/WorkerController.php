@@ -128,7 +128,7 @@ class WorkerController extends Controller
             'shift' => 'sometimes|string|max:100',
             'rating' => 'nullable|numeric|min:0|max:5',
             'feedback' => 'nullable|string',
-            'is_active' => 'sometimes|boolean',
+            'is_active' => 'boolean',
             'address' => 'nullable|string',
         ]);
        

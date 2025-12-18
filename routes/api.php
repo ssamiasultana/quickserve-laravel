@@ -43,7 +43,7 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/workers', [WorkerController::class, 'createWorker']);
     Route::get('/workers/paginated', [WorkerController::class, 'getPaginated']);
     Route::get('/workers/search', [WorkerController::class, 'searchWorkers']);
-    Route::put('/workers/{id}', [WorkerController::class, 'updateWorker']);
+    Route::patch('/workers/{id}', [WorkerController::class, 'updateWorker']);
     Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
     Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
     Route::get('/workers/{serviceId}', [WorkerController::class, 'getWorkersByService']);
