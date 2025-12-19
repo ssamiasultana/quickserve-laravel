@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Support\Facades\DB;
 
 class WorkerController extends Controller
 {
@@ -247,26 +248,27 @@ class WorkerController extends Controller
         ]);
     }
 
-public function getPaginated(Request $request)
-{
-    $perPage = $request->input('per_page', 10);
-    
-    $workers = Worker::with('services')->paginate($perPage);
-    return response()->json([
-        'success' => true,
-        'data' => $workers->items(),
-        'pagination' => [
-            'total' => $workers->total(),
-            'per_page' => $workers->perPage(),
-            'current_page' => $workers->currentPage(),
-            'last_page' => $workers->lastPage(),
-            'from' => $workers->firstItem(),
-            'to' => $workers->lastItem(),
-        ],
-        'message' => 'Workers retrieved successfully'
-    ], 200);
-}
-
+    public function getPaginated(Request $request)
+    {
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1); // Explicitly get page
+        
+        $workers = Worker::with('services')->paginate($perPage, ['*'], 'page', $page);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $workers->items(),
+            'pagination' => [
+                'total' => $workers->total(),
+                'per_page' => $workers->perPage(),
+                'current_page' => $workers->currentPage(),
+                'last_page' => $workers->lastPage(),
+                'from' => $workers->firstItem(),
+                'to' => $workers->lastItem(),
+            ],
+            'message' => 'Workers retrieved successfully'
+        ], 200);
+    }
 public function searchWorkers(Request $request)
     {
         $query = Worker::with('services');
@@ -326,4 +328,182 @@ public function searchWorkers(Request $request)
             'message' => 'Workers retrieved successfully'
         ]);
     }
+    public function createBulkWorkers(Request $request): JsonResponse
+    {
+        $authenticatedUser = auth()->user();
+        
+        if (!$authenticatedUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized - User not authenticated'
+            ], 401);
+        }
+    
+        // Only admins can bulk create workers
+        if (!$authenticatedUser->isAdmin()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized - Only admins can bulk create workers'
+            ], 403);
+        }
+    
+        // Validate the main structure
+        $mainValidator = Validator::make($request->all(), [
+            'workers' => 'required|array|min:1|max:100',
+        ]);
+    
+        if ($mainValidator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid data format',
+                'errors' => $mainValidator->errors()
+            ], 422);
+        }
+    
+        $workersData = $request->input('workers');
+        
+        // Collect all emails for duplicate checking
+        $emails = array_filter(array_column($workersData, 'email'));
+        
+        // Check for duplicate emails within the request
+        $duplicateEmailsInRequest = array_diff_assoc($emails, array_unique($emails));
+        if (!empty($duplicateEmailsInRequest)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate emails found in request',
+                'duplicate_emails' => array_values(array_unique($duplicateEmailsInRequest))
+            ], 422);
+        }
+    
+        // Check for existing emails in database
+        $existingEmails = Worker::whereIn('email', $emails)->pluck('email')->toArray();
+        if (!empty($existingEmails)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Some emails already exist in database',
+                'existing_emails' => $existingEmails
+            ], 409);
+        }
+    
+        // Check for existing user_ids if provided
+        $userIds = array_filter(array_column($workersData, 'user_id'));
+        if (!empty($userIds)) {
+            $existingUserIds = Worker::whereIn('user_id', $userIds)->pluck('user_id')->toArray();
+            if (!empty($existingUserIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Worker profiles already exist for some users',
+                    'existing_user_ids' => $existingUserIds
+                ], 409);
+            }
+        }
+    
+        DB::beginTransaction();
+        
+        try {
+            $createdWorkers = [];
+            $errors = [];
+    
+            foreach ($workersData as $index => $workerData) {
+                try {
+                    // Validate each worker
+                    $validator = Validator::make($workerData, [
+                        'user_id' => 'nullable|integer|exists:users,id',
+                        'name' => 'required|string|max:255',
+                        'email' => 'required|email',
+                        'phone' => 'nullable|string|max:20',
+                        'age' => 'required|integer|min:18',
+                        'image' => 'nullable|string',
+                        'service_ids' => 'required|array|min:1',
+                        'service_ids.*' => 'exists:services,id',
+                        'expertise_of_service' => 'required|array|min:1',
+                        'expertise_of_service.*' => 'integer|min:1|max:5',
+                        'shift' => 'required|string|max:100',
+                        'feedback' => 'nullable|string',
+                        'is_active' => 'boolean',
+                        'address' => 'nullable|string',
+                    ]);
+    
+                    if ($validator->fails()) {
+                        $errors[] = [
+                            'index' => $index,
+                            'email' => $workerData['email'] ?? 'N/A',
+                            'name' => $workerData['name'] ?? 'N/A',
+                            'errors' => $validator->errors()->toArray()
+                        ];
+                        continue;
+                    }
+    
+                    $validatedData = $validator->validated();
+    
+                    // Handle user_id assignment
+                    if (isset($workerData['user_id']) && $workerData['user_id']) {
+                        $validatedData['user_id'] = $workerData['user_id'];
+                    } else {
+                        $validatedData['user_id'] = $authenticatedUser->id;
+                    }
+    
+                    // Extract service_ids before creating worker
+                    $serviceIds = $validatedData['service_ids'];
+                    unset($validatedData['service_ids']);
+    
+                    // Set default is_active if not provided
+                    if (!isset($validatedData['is_active'])) {
+                        $validatedData['is_active'] = true;
+                    }
+    
+                    // Create worker
+                    $worker = Worker::create($validatedData);
+    
+                    // Attach services to worker
+                    $worker->services()->attach($serviceIds);
+    
+                    // Load services relationship
+                    $worker->load('services');
+    
+                    $createdWorkers[] = $worker;
+    
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'index' => $index,
+                        'email' => $workerData['email'] ?? 'N/A',
+                        'name' => $workerData['name'] ?? 'N/A',
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+    
+            // If there are any errors, rollback everything
+            if (!empty($errors)) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bulk creation failed due to validation errors',
+                    'errors' => $errors,
+                    'created_count' => 0,
+                    'failed_count' => count($errors)
+                ], 422);
+            }
+    
+            DB::commit();
+    
+            return response()->json([
+                'success' => true,
+                'data' => $createdWorkers,
+                'message' => 'All workers created successfully',
+                'created_count' => count($createdWorkers),
+                'failed_count' => 0
+            ], 201);
+    
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred during bulk creation',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
 }
