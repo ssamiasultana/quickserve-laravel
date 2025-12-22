@@ -2,9 +2,124 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Http\Requests\BatchBookingRequest;
+use App\Http\Requests\BookingRequest;
+use App\Http\Resources\BookingResource;
+use App\Models\Booking;
+use App\Services\BookingService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
 {
-    //
+    public function __construct(
+        protected BookingService $bookingService
+    ) {
+    }
+
+    /**
+     * Create one or more bookings for a single customer.
+     */
+    public function createBooking(BookingRequest $request): JsonResponse
+    {
+        try {
+            $bookings = $this->bookingService->createBooking($request->validated());
+
+            // Load relationships on each booking model
+            $bookings->each(function ($booking) {
+                $booking->load(['customer', 'service', 'serviceSubcategory']);
+            });
+
+            // Calculate total: sum of unit_prices * (1 + shift_charge_percent)
+            $sumOfUnitPrices = $bookings->sum('unit_price');
+            $shiftType = $request->input('shift_type', 'day');
+            $shiftChargePercent = $shiftType === 'night'
+                ? config('services.booking_night_shift_percent', 20)
+                : 0;
+            $totalAmount = $sumOfUnitPrices * (1 + $shiftChargePercent / 100);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Booking(s) created successfully',
+                'data' => [
+                    'bookings' => BookingResource::collection($bookings),
+                    'total_bookings' => $bookings->count(),
+                    'total_amount' => round($totalAmount, 2),
+                ],
+            ], 201);
+        } catch (\Throwable $e) {
+            Log::error('Booking creation failed: '.$e->getMessage(), [
+                'data' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create booking(s)',
+                'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a single booking by model binding.
+     */
+    public function getBooking(Booking $booking): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => new BookingResource(
+                $booking->load(['customer', 'serviceCategory', 'serviceSubcategory'])
+            ),
+        ]);
+    }
+
+    /**
+     * Create multiple bookings in batch.
+     */
+    public function batchStore(BatchBookingRequest $request): JsonResponse
+    {
+        try {
+            $bookings = $this->bookingService->createBatchBooking($request->validated());
+
+            // Load relationships on each booking model
+            $bookings->each(function ($booking) {
+                $booking->load(['customer', 'service', 'serviceSubcategory']);
+            });
+
+            // Calculate total: sum of unit_prices * (1 + shift_charge_percent)
+            // For batch, we need to group by shift_type and calculate accordingly
+            $sumOfUnitPrices = $bookings->sum('unit_price');
+            // Get shift type from first booking (assuming all have same shift type in batch)
+            $firstBooking = $bookings->first();
+            $shiftType = $firstBooking ? $firstBooking->shift_type : 'day';
+            $shiftChargePercent = $shiftType === 'night'
+                ? config('services.booking_night_shift_percent', 20)
+                : 0;
+            $totalAmount = $sumOfUnitPrices * (1 + $shiftChargePercent / 100);
+
+            return response()->json([
+                'success' => true,
+                'message' => $bookings->count().' booking(s) created successfully',
+                'data' => [
+                    'bookings' => BookingResource::collection($bookings),
+                    'total_bookings' => $bookings->count(),
+                    'total_amount' => round($totalAmount, 2),
+                    'summary' => $this->bookingService->calculateBatchSummary($bookings),
+                ],
+            ], 201);
+        } catch (\Throwable $e) {
+            Log::error('Batch booking creation failed: '.$e->getMessage(), [
+                'data' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create bookings',
+                'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
+            ], 500);
+        }
+    }
 }
+

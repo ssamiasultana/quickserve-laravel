@@ -11,6 +11,8 @@ use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\PasswordResetController; 
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\ServiceCategoryController;
+use App\Http\Controllers\BookingController;
+
 
 
 /*
@@ -73,6 +75,12 @@ Route::prefix('service-subcategories')->group(function () {
     Route::post('/', [ServiceCategoryController::class, 'createServiceCategory']);
     Route::get('/{id}',[ServiceCategoryController::class,'getServicecategoryById']);
    
+});
+
+Route::prefix('/booking')->group(function () {
+    Route::post('/', [BookingController::class, 'createBooking']);
+    Route::get('/{booking}', [BookingController::class, 'getBooking']);
+    Route::post('/batch', [BookingController::class, 'batchStore']);
 });
 
 Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);

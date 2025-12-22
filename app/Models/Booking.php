@@ -10,9 +10,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Booking extends Model
 {
     use HasFactory;
+
+    /**
+     * The table associated with the model.
+     *
+     * Explicitly set because the migration currently creates a `booking` table.
+     */
+    protected $table = 'booking';
+
     protected $fillable = [
         'customer_id',
-        'service_category_id',
+        'service_id',
         'service_subcategory_id',
         'quantity',
         'unit_price',
@@ -40,12 +48,17 @@ class Booking extends Model
     ];
     public function customer(): BelongsTo
     {
-        return $this->belongsTo(Customer::class);
+        return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    public function service(): BelongsTo
+    {
+        return $this->belongsTo(Services::class, 'service_id');
     }
 
     public function serviceCategory(): BelongsTo
     {
-        return $this->belongsTo(ServiceCategory::class);
+        return $this->service();
     }
 
     public function serviceSubcategory(): BelongsTo

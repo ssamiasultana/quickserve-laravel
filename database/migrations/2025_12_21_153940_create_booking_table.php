@@ -15,13 +15,13 @@ return new class extends Migration
     {
         Schema::create('booking', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('customer_id')->constrained('customers')->onDelete('cascade');
-            $table->foreignId('service_category_id')->constrained('service_categories')->onDelete('cascade');
+            $table->foreignId('customer_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('service_id')->constrained('services')->onDelete('cascade');
             $table->foreignId('service_subcategory_id')->constrained('service_subcategories')->onDelete('cascade');
             $table->integer('quantity')->default(1);
             $table->decimal('unit_price', 10, 2);
             $table->decimal('subtotal_amount', 10, 2);
-            $table->enum('shift_type');
+            $table->enum('shift_type', ['day', 'night']);
             $table->decimal('shift_charge_percent', 5, 2)->default(0);
             $table->decimal('total_amount', 10, 2);
             $table->enum('status', ['pending', 'paid', 'confirmed', 'cancelled'])->default('pending');
