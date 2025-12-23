@@ -25,7 +25,7 @@ class BookingRequest extends FormRequest
     {
         return [
             'user_id' => ['required', 'exists:users,id'],
-            'shift_type' => ['required', 'in:day,night'],
+            'shift_type' => ['required', 'in:day,night,flexible'],
             'scheduled_at' => ['required', 'date', 'after:now'],
             'quantity' => ['required', 'integer', 'min:1'],
             'services' => ['required', 'array', 'min:1'],

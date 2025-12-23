@@ -26,7 +26,7 @@ class BookingService
             $scheduledAt = $data['scheduled_at'];
             $quantity = (int) ($data['quantity'] ?? 1);
 
-            if (! in_array($shiftType, ['day', 'night'], true)) {
+            if (! in_array($shiftType, ['day', 'night', 'flexible'], true)) {
                 throw new InvalidArgumentException('Invalid shift type provided.');
             }
 
@@ -104,9 +104,11 @@ class BookingService
         $unitPrice = (float) $subcategory->base_price;
         $subtotal = $unitPrice * $quantity;
 
-        $shiftChargePercent = $shiftType === 'night'
-            ? config('services.booking_night_shift_percent', 20)
-            : 0;
+        $shiftChargePercent = match ($shiftType) {
+            'night' => config('services.booking_night_shift_percent', 20),
+            'flexible' => config('services.booking_flexible_shift_percent', 0),
+            default => 0,
+        };
 
         // Total amount is just unit_price (not multiplied by quantity)
         $totalAmount = $unitPrice;

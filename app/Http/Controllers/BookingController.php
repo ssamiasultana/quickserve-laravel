@@ -33,9 +33,11 @@ class BookingController extends Controller
             // Calculate total: sum of unit_prices * (1 + shift_charge_percent)
             $sumOfUnitPrices = $bookings->sum('unit_price');
             $shiftType = $request->input('shift_type', 'day');
-            $shiftChargePercent = $shiftType === 'night'
-                ? config('services.booking_night_shift_percent', 20)
-                : 0;
+            $shiftChargePercent = match ($shiftType) {
+                'night' => config('services.booking_night_shift_percent', 20),
+                'flexible' => config('services.booking_flexible_shift_percent', 0),
+                default => 0,
+            };
             $totalAmount = $sumOfUnitPrices * (1 + $shiftChargePercent / 100);
 
             return response()->json([
@@ -75,6 +77,23 @@ class BookingController extends Controller
     }
 
     /**
+     * Get all bookings for a specific customer by customer_id.
+     */
+    public function getBookingsByCustomer($customerId): JsonResponse
+    {
+        $bookings = Booking::where('customer_id', $customerId)
+            ->with(['customer', 'service', 'serviceSubcategory'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => BookingResource::collection($bookings),
+            'total_bookings' => $bookings->count(),
+        ]);
+    }
+
+    /**
      * Create multiple bookings in batch.
      */
     public function batchStore(BatchBookingRequest $request): JsonResponse
@@ -93,9 +112,11 @@ class BookingController extends Controller
             // Get shift type from first booking (assuming all have same shift type in batch)
             $firstBooking = $bookings->first();
             $shiftType = $firstBooking ? $firstBooking->shift_type : 'day';
-            $shiftChargePercent = $shiftType === 'night'
-                ? config('services.booking_night_shift_percent', 20)
-                : 0;
+            $shiftChargePercent = match ($shiftType) {
+                'night' => config('services.booking_night_shift_percent', 20),
+                'flexible' => config('services.booking_flexible_shift_percent', 0),
+                default => 0,
+            };
             $totalAmount = $sumOfUnitPrices * (1 + $shiftChargePercent / 100);
 
             return response()->json([

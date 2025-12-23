@@ -79,7 +79,10 @@ Route::prefix('service-subcategories')->group(function () {
 
 Route::prefix('/booking')->group(function () {
     Route::post('/', [BookingController::class, 'createBooking']);
+    // Single booking by ID (model binding)
     Route::get('/{booking}', [BookingController::class, 'getBooking']);
+    // All bookings for a customer by customer_id
+    Route::get('/customer/{customerId}', [BookingController::class, 'getBookingsByCustomer']);
     Route::post('/batch', [BookingController::class, 'batchStore']);
 });
 

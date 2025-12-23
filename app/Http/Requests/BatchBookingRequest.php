@@ -24,7 +24,7 @@ class BatchBookingRequest extends FormRequest
         return [
             'bookings' => ['required', 'array', 'min:1'],
             'bookings.*.user_id' => ['required', 'exists:users,id'],
-            'bookings.*.shift_type' => ['required', 'in:day,night'],
+            'bookings.*.shift_type' => ['required', 'in:day,night,flexible'],
             'bookings.*.scheduled_at' => ['required', 'date', 'after:now'],
             'bookings.*.quantity' => ['required', 'integer', 'min:1'],
             'bookings.*.services' => ['required', 'array', 'min:1'],

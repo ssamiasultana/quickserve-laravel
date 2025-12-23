@@ -21,7 +21,7 @@ return new class extends Migration
             $table->integer('quantity')->default(1);
             $table->decimal('unit_price', 10, 2);
             $table->decimal('subtotal_amount', 10, 2);
-            $table->enum('shift_type', ['day', 'night']);
+            $table->enum('shift_type', ['day', 'night', 'flexible']);
             $table->decimal('shift_charge_percent', 5, 2)->default(0);
             $table->decimal('total_amount', 10, 2);
             $table->enum('status', ['pending', 'paid', 'confirmed', 'cancelled'])->default('pending');
