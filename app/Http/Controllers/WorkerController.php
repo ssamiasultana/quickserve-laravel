@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\DB;
+use App\Helpers\NIDValidator;
 
 class WorkerController extends Controller
 {
@@ -30,6 +31,9 @@ class WorkerController extends Controller
             'phone' => 'nullable|string|max:20',
             'age' => 'required|integer|min:18',
             'image' => 'nullable|string',
+            'nid' => 'required|string|max:20',
+            'nid_front_image' => 'nullable|string',
+            'nid_back_image' => 'nullable|string',
             'service_ids' => 'required|array|min:1',
             'service_ids.*' => 'exists:services,id',
             'expertise_of_service' => 'required|array|min:1',
@@ -49,6 +53,51 @@ class WorkerController extends Controller
         }
 
         $validatedData = $validator->validated();
+
+        // Validate NID format
+        if (isset($validatedData['nid'])) {
+            $nidValidation = NIDValidator::validate($validatedData['nid']);
+            if (!$nidValidation['valid']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'NID validation failed',
+                    'errors' => ['nid' => $nidValidation['message']]
+                ], 422);
+            }
+
+            // Check NID uniqueness
+            if (!NIDValidator::isUnique($validatedData['nid'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'NID is already registered',
+                    'errors' => ['nid' => 'This NID number is already registered to another worker']
+                ], 422);
+            }
+
+            // Validate age consistency if both age and NID are provided
+            if (isset($validatedData['age'])) {
+                // Log for debugging
+                \Log::info('Age validation (update)', [
+                    // 'worker_id' => $id,
+                    'nid' => $validatedData['nid'],
+                    'age' => $validatedData['age'],
+                    'raw_age' => $request->input('age')
+                ]);
+                
+                $ageValidation = NIDValidator::validateAgeConsistency(
+                    $validatedData['nid'],
+                    $validatedData['age'],
+                    3 // 3 year tolerance
+                );
+                if (!$ageValidation['valid']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Age validation failed',
+                        'errors' => ['age' => $ageValidation['message']]
+                    ], 422);
+                }
+            }
+        }
 
         // Handle user_id assignment
         if($request->has('user_id') && $request->user_id){
@@ -122,6 +171,9 @@ class WorkerController extends Controller
             'phone' => 'nullable|string|max:20',
             'age' => 'sometimes|integer|min:18',
             'image' => 'nullable|string',
+            'nid' => 'sometimes|string|max:20',
+            'nid_front_image' => 'nullable|string',
+            'nid_back_image' => 'nullable|string',
             'service_ids' => 'sometimes|array|min:1',
             'service_ids.*' => 'exists:services,id',
             'expertise_of_service' => 'sometimes|array',
@@ -142,6 +194,51 @@ class WorkerController extends Controller
         }
     
         $validatedData = $validator->validated();
+
+        // Validate NID format if provided
+        if (isset($validatedData['nid'])) {
+            $nidValidation = NIDValidator::validate($validatedData['nid']);
+            if (!$nidValidation['valid']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'NID validation failed',
+                    'errors' => ['nid' => $nidValidation['message']]
+                ], 422);
+            }
+
+            // Check NID uniqueness (exclude current worker)
+            if (!NIDValidator::isUnique($validatedData['nid'], $id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'NID is already registered',
+                    'errors' => ['nid' => 'This NID number is already registered to another worker']
+                ], 422);
+            }
+
+            // Validate age consistency if both age and NID are provided
+            if (isset($validatedData['age'])) {
+                // Log for debugging
+                \Log::info('Age validation (update)', [
+                    'worker_id' => $id,
+                    'nid' => $validatedData['nid'],
+                    'age' => $validatedData['age'],
+                    'raw_age' => $request->input('age')
+                ]);
+                
+                $ageValidation = NIDValidator::validateAgeConsistency(
+                    $validatedData['nid'],
+                    $validatedData['age'],
+                    3 // 3 year tolerance
+                );
+                if (!$ageValidation['valid']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Age validation failed',
+                        'errors' => ['age' => $ageValidation['message']]
+                    ], 422);
+                }
+            }
+        }
 
         // Handle service_ids separately
         if (isset($validatedData['service_ids'])) {
@@ -328,182 +425,278 @@ public function searchWorkers(Request $request)
             'message' => 'Workers retrieved successfully'
         ]);
     }
-    public function createBulkWorkers(Request $request): JsonResponse
+    // public function createBulkWorkers(Request $request): JsonResponse
+    // {
+    //     $authenticatedUser = auth()->user();
+        
+    //     if (!$authenticatedUser) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Unauthorized - User not authenticated'
+    //         ], 401);
+    //     }
+    
+    //     // Only admins can bulk create workers
+    //     if (!$authenticatedUser->isAdmin()) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Unauthorized - Only admins can bulk create workers'
+    //         ], 403);
+    //     }
+    
+    //     // Validate the main structure
+    //     $mainValidator = Validator::make($request->all(), [
+    //         'workers' => 'required|array|min:1|max:100',
+    //     ]);
+    
+    //     if ($mainValidator->fails()) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Invalid data format',
+    //             'errors' => $mainValidator->errors()
+    //         ], 422);
+    //     }
+    
+    //     $workersData = $request->input('workers');
+        
+    //     // Collect all emails for duplicate checking
+    //     $emails = array_filter(array_column($workersData, 'email'));
+        
+    //     // Check for duplicate emails within the request
+    //     $duplicateEmailsInRequest = array_diff_assoc($emails, array_unique($emails));
+    //     if (!empty($duplicateEmailsInRequest)) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Duplicate emails found in request',
+    //             'duplicate_emails' => array_values(array_unique($duplicateEmailsInRequest))
+    //         ], 422);
+    //     }
+    
+    //     // Check for existing emails in database
+    //     $existingEmails = Worker::whereIn('email', $emails)->pluck('email')->toArray();
+    //     if (!empty($existingEmails)) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Some emails already exist in database',
+    //             'existing_emails' => $existingEmails
+    //         ], 409);
+    //     }
+    
+    //     // Check for existing user_ids if provided
+    //     $userIds = array_filter(array_column($workersData, 'user_id'));
+    //     if (!empty($userIds)) {
+    //         $existingUserIds = Worker::whereIn('user_id', $userIds)->pluck('user_id')->toArray();
+    //         if (!empty($existingUserIds)) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Worker profiles already exist for some users',
+    //                 'existing_user_ids' => $existingUserIds
+    //             ], 409);
+    //         }
+    //     }
+    
+    //     DB::beginTransaction();
+        
+    //     try {
+    //         $createdWorkers = [];
+    //         $errors = [];
+    
+    //         foreach ($workersData as $index => $workerData) {
+    //             try {
+    //                 // Validate each worker
+    //                 $validator = Validator::make($workerData, [
+    //                     'user_id' => 'nullable|integer|exists:users,id',
+    //                     'name' => 'required|string|max:255',
+    //                     'email' => 'required|email',
+    //                     'phone' => 'nullable|string|max:20',
+    //                     'age' => 'required|integer|min:18',
+    //                     'image' => 'nullable|string',
+    //                     'service_ids' => 'required|array|min:1',
+    //                     'service_ids.*' => 'exists:services,id',
+    //                     'expertise_of_service' => 'required|array|min:1',
+    //                     'expertise_of_service.*' => 'integer|min:1|max:5',
+    //                     'shift' => 'required|string|max:100',
+    //                     'feedback' => 'nullable|string',
+    //                     'is_active' => 'boolean',
+    //                     'address' => 'nullable|string',
+    //                 ]);
+    
+    //                 if ($validator->fails()) {
+    //                     $errors[] = [
+    //                         'index' => $index,
+    //                         'email' => $workerData['email'] ?? 'N/A',
+    //                         'name' => $workerData['name'] ?? 'N/A',
+    //                         'errors' => $validator->errors()->toArray()
+    //                     ];
+    //                     continue;
+    //                 }
+    
+    //                 $validatedData = $validator->validated();
+    
+    //                 // Handle user_id assignment
+    //                 if (isset($workerData['user_id']) && $workerData['user_id']) {
+    //                     $validatedData['user_id'] = $workerData['user_id'];
+    //                 } else {
+    //                     $validatedData['user_id'] = $authenticatedUser->id;
+    //                 }
+    
+    //                 // Extract service_ids before creating worker
+    //                 $serviceIds = $validatedData['service_ids'];
+    //                 unset($validatedData['service_ids']);
+    
+    //                 // Set default is_active if not provided
+    //                 if (!isset($validatedData['is_active'])) {
+    //                     $validatedData['is_active'] = true;
+    //                 }
+    
+    //                 // Create worker
+    //                 $worker = Worker::create($validatedData);
+    
+    //                 // Attach services to worker
+    //                 $worker->services()->attach($serviceIds);
+    
+    //                 // Load services relationship
+    //                 $worker->load('services');
+    
+    //                 $createdWorkers[] = $worker;
+    
+    //             } catch (\Exception $e) {
+    //                 $errors[] = [
+    //                     'index' => $index,
+    //                     'email' => $workerData['email'] ?? 'N/A',
+    //                     'name' => $workerData['name'] ?? 'N/A',
+    //                     'error' => $e->getMessage()
+    //                 ];
+    //             }
+    //         }
+    
+    //         // If there are any errors, rollback everything
+    //         if (!empty($errors)) {
+    //             DB::rollBack();
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Bulk creation failed due to validation errors',
+    //                 'errors' => $errors,
+    //                 'created_count' => 0,
+    //                 'failed_count' => count($errors)
+    //             ], 422);
+    //         }
+    
+    //         DB::commit();
+    
+    //         return response()->json([
+    //             'success' => true,
+    //             'data' => $createdWorkers,
+    //             'message' => 'All workers created successfully',
+    //             'created_count' => count($createdWorkers),
+    //             'failed_count' => 0
+    //         ], 201);
+    
+    //     } catch (\Exception $e) {
+    //         DB::rollBack();
+            
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'An error occurred during bulk creation',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+    public function verifyNID(Request $request, $id): JsonResponse
     {
         $authenticatedUser = auth()->user();
         
-        if (!$authenticatedUser) {
+        if (!$authenticatedUser || !$authenticatedUser->isAdmin()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized - User not authenticated'
-            ], 401);
-        }
-    
-        // Only admins can bulk create workers
-        if (!$authenticatedUser->isAdmin()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized - Only admins can bulk create workers'
+                'message' => 'Unauthorized - Only admins can verify NID'
             ], 403);
         }
-    
-        // Validate the main structure
-        $mainValidator = Validator::make($request->all(), [
-            'workers' => 'required|array|min:1|max:100',
+        
+        $worker = Worker::find($id);
+        
+        if (!$worker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Worker not found'
+            ], 404);
+        }
+        
+        if (!$worker->nid) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No NID provided for this worker'
+            ], 422);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'verified' => 'required|boolean',
+            'notes' => 'nullable|string|max:500'
         ]);
-    
-        if ($mainValidator->fails()) {
+        
+        if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid data format',
-                'errors' => $mainValidator->errors()
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
             ], 422);
         }
-    
-        $workersData = $request->input('workers');
         
-        // Collect all emails for duplicate checking
-        $emails = array_filter(array_column($workersData, 'email'));
+        $worker->nid_verified = $request->verified;
+        $worker->nid_verified_at = $request->verified ? now() : null;
+        // Store notes in a separate field if you add it, or in feedback temporarily
+        // For now, we'll add it as a JSON in a new migration if needed
+        $worker->save();
         
-        // Check for duplicate emails within the request
-        $duplicateEmailsInRequest = array_diff_assoc($emails, array_unique($emails));
-        if (!empty($duplicateEmailsInRequest)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Duplicate emails found in request',
-                'duplicate_emails' => array_values(array_unique($duplicateEmailsInRequest))
-            ], 422);
-        }
-    
-        // Check for existing emails in database
-        $existingEmails = Worker::whereIn('email', $emails)->pluck('email')->toArray();
-        if (!empty($existingEmails)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Some emails already exist in database',
-                'existing_emails' => $existingEmails
-            ], 409);
-        }
-    
-        // Check for existing user_ids if provided
-        $userIds = array_filter(array_column($workersData, 'user_id'));
-        if (!empty($userIds)) {
-            $existingUserIds = Worker::whereIn('user_id', $userIds)->pluck('user_id')->toArray();
-            if (!empty($existingUserIds)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Worker profiles already exist for some users',
-                    'existing_user_ids' => $existingUserIds
-                ], 409);
-            }
-        }
-    
-        DB::beginTransaction();
+        // Reload with relationships
+        $worker->load('services');
         
-        try {
-            $createdWorkers = [];
-            $errors = [];
-    
-            foreach ($workersData as $index => $workerData) {
-                try {
-                    // Validate each worker
-                    $validator = Validator::make($workerData, [
-                        'user_id' => 'nullable|integer|exists:users,id',
-                        'name' => 'required|string|max:255',
-                        'email' => 'required|email',
-                        'phone' => 'nullable|string|max:20',
-                        'age' => 'required|integer|min:18',
-                        'image' => 'nullable|string',
-                        'service_ids' => 'required|array|min:1',
-                        'service_ids.*' => 'exists:services,id',
-                        'expertise_of_service' => 'required|array|min:1',
-                        'expertise_of_service.*' => 'integer|min:1|max:5',
-                        'shift' => 'required|string|max:100',
-                        'feedback' => 'nullable|string',
-                        'is_active' => 'boolean',
-                        'address' => 'nullable|string',
-                    ]);
-    
-                    if ($validator->fails()) {
-                        $errors[] = [
-                            'index' => $index,
-                            'email' => $workerData['email'] ?? 'N/A',
-                            'name' => $workerData['name'] ?? 'N/A',
-                            'errors' => $validator->errors()->toArray()
-                        ];
-                        continue;
-                    }
-    
-                    $validatedData = $validator->validated();
-    
-                    // Handle user_id assignment
-                    if (isset($workerData['user_id']) && $workerData['user_id']) {
-                        $validatedData['user_id'] = $workerData['user_id'];
-                    } else {
-                        $validatedData['user_id'] = $authenticatedUser->id;
-                    }
-    
-                    // Extract service_ids before creating worker
-                    $serviceIds = $validatedData['service_ids'];
-                    unset($validatedData['service_ids']);
-    
-                    // Set default is_active if not provided
-                    if (!isset($validatedData['is_active'])) {
-                        $validatedData['is_active'] = true;
-                    }
-    
-                    // Create worker
-                    $worker = Worker::create($validatedData);
-    
-                    // Attach services to worker
-                    $worker->services()->attach($serviceIds);
-    
-                    // Load services relationship
-                    $worker->load('services');
-    
-                    $createdWorkers[] = $worker;
-    
-                } catch (\Exception $e) {
-                    $errors[] = [
-                        'index' => $index,
-                        'email' => $workerData['email'] ?? 'N/A',
-                        'name' => $workerData['name'] ?? 'N/A',
-                        'error' => $e->getMessage()
-                    ];
-                }
-            }
-    
-            // If there are any errors, rollback everything
-            if (!empty($errors)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Bulk creation failed due to validation errors',
-                    'errors' => $errors,
-                    'created_count' => 0,
-                    'failed_count' => count($errors)
-                ], 422);
-            }
-    
-            DB::commit();
-    
-            return response()->json([
-                'success' => true,
-                'data' => $createdWorkers,
-                'message' => 'All workers created successfully',
-                'created_count' => count($createdWorkers),
-                'failed_count' => 0
-            ], 201);
-    
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'An error occurred during bulk creation',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'data' => $worker,
+            'message' => $request->verified 
+                ? 'NID verified successfully' 
+                : 'NID verification revoked'
+        ]);
     }
     
+    public function checkNIDAvailability(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'nid' => 'required|string|min:10|max:17',
+            'exclude_worker_id' => 'nullable|integer'
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        $nid = $request->nid;
+        $excludeId = $request->exclude_worker_id;
+        
+        // Validate NID format
+        $nidValidation = NIDValidator::validate($nid);
+        if (!$nidValidation['valid']) {
+            return response()->json([
+                'success' => false,
+                'available' => false,
+                'message' => $nidValidation['message']
+            ], 422);
+        }
+        
+        // Check uniqueness
+        $isUnique = NIDValidator::isUnique($nid, $excludeId);
+        
+        return response()->json([
+            'success' => true,
+            'available' => $isUnique,
+            'message' => $isUnique 
+                ? 'NID is available' 
+                : 'NID is already registered'
+        ]);
+    }
 }

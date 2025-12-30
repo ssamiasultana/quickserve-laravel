@@ -20,12 +20,19 @@ class Worker extends Model
         'shift',
         'feedback',
         'is_active',
-        'address'
+        'address',
+        'nid',                  
+        'nid_verified',         
+        'nid_verified_at',      
+        'nid_front_image',     
+        'nid_back_image', 
     ];
     protected $casts = [
         'rating' => 'decimal:2',
         'is_active' => 'boolean',
-        'expertise_of_service' => 'array'
+        'expertise_of_service' => 'array',
+        'nid_verified' => 'boolean',        
+        'nid_verified_at' => 'datetime', 
     ];
     public function user()
     {

@@ -50,6 +50,11 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
     Route::get('/workers/{serviceId}', [WorkerController::class, 'getWorkersByService']);
 
+    Route::post('/workers/{id}/verify-nid', [WorkerController::class, 'verifyNID']);
+    
+    // Check NID availability
+    Route::post('/workers/check-nid', [WorkerController::class, 'checkNIDAvailability']);
+
     // Service routes
     Route::post('/services', [ServiceController::class, 'createServices']);
     Route::get('/getServices', [ServiceController::class, 'getServices']);
