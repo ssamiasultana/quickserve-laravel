@@ -142,5 +142,23 @@ class BookingController extends Controller
             ], 500);
         }
     }
+    public function getAllBookings(): JsonResponse
+    {
+     
+        $bookings = Booking::with([
+            'customer',
+            'service',
+            'serviceSubcategory'
+        ])
+        // ->orderByDesc('created_at')
+        ->get();
+
+    return response()->json([
+        'success' => true,
+        'data' => BookingResource::collection($bookings),
+        'total_bookings' => $bookings->count(),
+        'message' => 'All bookings retrieved successfully'
+    ]);
+    }
 }
 

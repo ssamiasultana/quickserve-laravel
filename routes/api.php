@@ -89,6 +89,7 @@ Route::prefix('/booking')->group(function () {
     // All bookings for a customer by customer_id
     Route::get('/customer/{customerId}', [BookingController::class, 'getBookingsByCustomer']);
     Route::post('/batch', [BookingController::class, 'batchStore']);
+    Route::get('/',[BookingController::class,'getAllBookings']);
 });
 
 Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
