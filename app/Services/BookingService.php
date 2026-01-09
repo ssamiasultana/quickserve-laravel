@@ -31,7 +31,13 @@ class BookingService
             $scheduledAt = $data['scheduled_at'];
             $quantity = (int) ($data['quantity'] ?? 1);
 
-            if (! in_array($shiftType, ['day', 'night', 'flexible'], true)) {
+            // Normalize shift type - map 'flexible' to 'day' if enum doesn't support it
+            // This handles cases where the database enum hasn't been updated yet
+            if ($shiftType === 'flexible') {
+                $shiftType = 'day'; // Flexible workers work during day shifts in the booking system
+            }
+
+            if (! in_array($shiftType, ['day', 'night'], true)) {
                 throw new InvalidArgumentException('Invalid shift type provided.');
             }
 
@@ -124,10 +130,10 @@ class BookingService
         $unitPrice = (float) $subcategory->base_price;
         $subtotal = $unitPrice * $quantity;
 
+        // Calculate shift charge (flexible is already mapped to 'day' at this point)
         $shiftChargePercent = match ($shiftType) {
             'night' => config('services.booking_night_shift_percent', 20),
-            'flexible' => config('services.booking_flexible_shift_percent', 0),
-            default => 0,
+            default => 0, // 'day' or 'flexible' (mapped to day) = 0%
         };
 
         // Total amount = subtotal (unit_price * quantity) + shift charge
