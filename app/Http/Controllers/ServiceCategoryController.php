@@ -59,7 +59,7 @@ class ServiceCategoryController extends Controller
         ]);
     
     }
-
+    
 
     }
     

@@ -20,6 +20,11 @@ class Booking extends Model
 
     protected $fillable = [
         'customer_id',
+        'customer_name',
+        'customer_email',
+        'customer_phone',
+        'service_address',
+        'special_instructions',
         'service_id',
         'service_subcategory_id',
         'quantity',

@@ -22,6 +22,11 @@ class BookingService
             $bookings = collect();
 
             $customerId = $data['customer_id'];
+            $customerName = $data['customer_name'] ?? null;
+            $customerEmail = $data['customer_email'] ?? null;
+            $customerPhone = $data['customer_phone'] ?? null;
+            $serviceAddress = $data['service_address'] ?? null;
+            $specialInstructions = $data['special_instructions'] ?? null;
             $shiftType = $data['shift_type'];
             $scheduledAt = $data['scheduled_at'];
             $quantity = (int) ($data['quantity'] ?? 1);
@@ -34,6 +39,11 @@ class BookingService
                 $bookings->push(
                     $this->createSingleBooking(
                         $customerId,
+                        $customerName,
+                        $customerEmail,
+                        $customerPhone,
+                        $serviceAddress,
+                        $specialInstructions,
                         $shiftType,
                         $scheduledAt,
                         $quantity,
@@ -85,6 +95,11 @@ class BookingService
      * Create a single booking record from service-specific data.
      *
      * @param  int    $customerId
+     * @param  string|null $customerName
+     * @param  string|null $customerEmail
+     * @param  string|null $customerPhone
+     * @param  string|null $serviceAddress
+     * @param  string|null $specialInstructions
      * @param  string $shiftType
      * @param  string $scheduledAt
      * @param  int    $quantity
@@ -93,6 +108,11 @@ class BookingService
      */
     protected function createSingleBooking(
         int $customerId,
+        ?string $customerName,
+        ?string $customerEmail,
+        ?string $customerPhone,
+        ?string $serviceAddress,
+        ?string $specialInstructions,
         string $shiftType,
         string $scheduledAt,
         int $quantity,
@@ -110,11 +130,17 @@ class BookingService
             default => 0,
         };
 
-        // Total amount is just unit_price (not multiplied by quantity)
-        $totalAmount = $unitPrice;
+        // Total amount = subtotal (unit_price * quantity) + shift charge
+        $shiftCharge = $subtotal * ($shiftChargePercent / 100);
+        $totalAmount = $subtotal + $shiftCharge;
 
         return Booking::create([
             'customer_id' => $customerId,
+            'customer_name' => $customerName,
+            'customer_email' => $customerEmail,
+            'customer_phone' => $customerPhone,
+            'service_address' => $serviceAddress,
+            'special_instructions' => $specialInstructions,
             'service_id' => $service['service_id'],
             'service_subcategory_id' => $service['service_subcategory_id'],
             'quantity' => $quantity,

@@ -25,6 +25,11 @@ class BookingRequest extends FormRequest
     {
         return [
             'user_id' => ['required', 'exists:users,id'],
+            'customer_name' => ['required', 'string', 'max:255'],
+            'customer_email' => ['required', 'email', 'max:255'],
+            'customer_phone' => ['required', 'string', 'max:20'],
+            'service_address' => ['required', 'string'],
+            'special_instructions' => ['nullable', 'string'],
             'shift_type' => ['required', 'in:day,night,flexible'],
             'scheduled_at' => ['required', 'date', 'after:now'],
             'quantity' => ['required', 'integer', 'min:1'],
@@ -38,6 +43,11 @@ class BookingRequest extends FormRequest
         return [
             'user_id.required' => 'User is required',
             'user_id.exists' => 'Selected user does not exist',
+            'customer_name.required' => 'Customer name is required',
+            'customer_email.required' => 'Customer email is required',
+            'customer_email.email' => 'Customer email must be a valid email address',
+            'customer_phone.required' => 'Customer phone number is required',
+            'service_address.required' => 'Service address is required',
             'services.required' => 'At least one service is required',
             'services.*.service_id.required' => 'Service is required for each service',
             'services.*.service_id.exists' => 'Selected service does not exist',

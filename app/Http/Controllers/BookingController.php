@@ -30,15 +30,8 @@ class BookingController extends Controller
                 $booking->load(['customer', 'service', 'serviceSubcategory']);
             });
 
-            // Calculate total: sum of unit_prices * (1 + shift_charge_percent)
-            $sumOfUnitPrices = $bookings->sum('unit_price');
-            $shiftType = $request->input('shift_type', 'day');
-            $shiftChargePercent = match ($shiftType) {
-                'night' => config('services.booking_night_shift_percent', 20),
-                'flexible' => config('services.booking_flexible_shift_percent', 0),
-                default => 0,
-            };
-            $totalAmount = $sumOfUnitPrices * (1 + $shiftChargePercent / 100);
+            // Calculate total: sum of total_amount from each booking (which already includes quantity and shift charge)
+            $totalAmount = $bookings->sum('total_amount');
 
             return response()->json([
                 'success' => true,
@@ -106,18 +99,8 @@ class BookingController extends Controller
                 $booking->load(['customer', 'service', 'serviceSubcategory']);
             });
 
-            // Calculate total: sum of unit_prices * (1 + shift_charge_percent)
-            // For batch, we need to group by shift_type and calculate accordingly
-            $sumOfUnitPrices = $bookings->sum('unit_price');
-            // Get shift type from first booking (assuming all have same shift type in batch)
-            $firstBooking = $bookings->first();
-            $shiftType = $firstBooking ? $firstBooking->shift_type : 'day';
-            $shiftChargePercent = match ($shiftType) {
-                'night' => config('services.booking_night_shift_percent', 20),
-                'flexible' => config('services.booking_flexible_shift_percent', 0),
-                default => 0,
-            };
-            $totalAmount = $sumOfUnitPrices * (1 + $shiftChargePercent / 100);
+            // Calculate total: sum of total_amount from each booking (which already includes quantity and shift charge)
+            $totalAmount = $bookings->sum('total_amount');
 
             return response()->json([
                 'success' => true,
