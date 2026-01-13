@@ -147,8 +147,9 @@ class BookingController extends Controller
 
     /**
      * Get all bookings for a worker based on their services.
+     * Filters by worker_id if provided in query parameter.
      */
-    public function getBookingsByWorker(): JsonResponse
+    public function getBookingsByWorker(Request $request): JsonResponse
     {
         try {
             $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
@@ -167,14 +168,26 @@ class BookingController extends Controller
         }
 
         // Get the worker with their services
+        // First try to find by user_id
         $worker = \App\Models\Worker::with('services')->where('user_id', $user->id)->first();
+        
+        // If not found by user_id, try to find by email (fallback for older records)
+        if (!$worker) {
+            $worker = \App\Models\Worker::with('services')->where('email', $user->email)->first();
+            
+            // If found by email but user_id is missing, update it
+            if ($worker && !$worker->user_id) {
+                $worker->user_id = $user->id;
+                $worker->save();
+            }
+        }
         
         if (!$worker) {
             return response()->json([
                 'success' => true,
                 'data' => [],
                 'total_bookings' => 0,
-                'message' => 'Worker not found'
+                'message' => 'Worker profile not found. Please complete your worker profile first.'
             ]);
         }
 
@@ -190,8 +203,10 @@ class BookingController extends Controller
             ]);
         }
 
-        // Get bookings for services that this worker provides
+        // Get bookings assigned to this worker
+        // Filter by worker_id to show only bookings assigned to the authenticated worker
         $bookings = Booking::whereIn('service_id', $serviceIds)
+            ->where('worker_id', $worker->id) // Filter by authenticated worker's ID
             ->with(['customer', 'service', 'serviceSubcategory'])
             ->orderByDesc('created_at')
             ->get();
@@ -227,11 +242,19 @@ class BookingController extends Controller
 
             $newStatus = $request->input('status');
 
-            // Check if the booking can be updated (only pending or confirmed bookings can be cancelled)
-            if ($newStatus === 'cancelled' && !in_array($booking->status, ['pending', 'confirmed'])) {
+            // Check if the booking can be cancelled (only pending bookings can be cancelled)
+            if ($newStatus === 'cancelled' && $booking->status !== 'pending') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot cancel a booking that is already paid or cancelled'
+                    'message' => 'Cannot cancel a booking that is already confirmed, paid, or cancelled'
+                ], 400);
+            }
+
+            // Check if the booking can be confirmed (only pending bookings can be confirmed)
+            if ($newStatus === 'confirmed' && $booking->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot confirm a booking that is already confirmed, paid, or cancelled'
                 ], 400);
             }
 

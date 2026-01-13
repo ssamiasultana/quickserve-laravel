@@ -20,6 +20,7 @@ class Booking extends Model
 
     protected $fillable = [
         'customer_id',
+        'worker_id',
         'customer_name',
         'customer_email',
         'customer_phone',
@@ -69,6 +70,11 @@ class Booking extends Model
     public function serviceSubcategory(): BelongsTo
     {
         return $this->belongsTo(ServiceSubcategory::class);
+    }
+
+    public function worker(): BelongsTo
+    {
+        return $this->belongsTo(Worker::class, 'worker_id');
     }
     public function isPending(): bool
     {

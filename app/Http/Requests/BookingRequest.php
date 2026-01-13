@@ -25,6 +25,7 @@ class BookingRequest extends FormRequest
     {
         return [
             'user_id' => ['required', 'exists:users,id'],
+            'worker_id' => ['nullable', 'exists:workers,id'],
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_email' => ['required', 'email', 'max:255'],
             'customer_phone' => ['required', 'string', 'max:20'],

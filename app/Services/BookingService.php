@@ -22,6 +22,7 @@ class BookingService
             $bookings = collect();
 
             $customerId = $data['customer_id'];
+            $workerId = $data['worker_id'] ?? null;
             $customerName = $data['customer_name'] ?? null;
             $customerEmail = $data['customer_email'] ?? null;
             $customerPhone = $data['customer_phone'] ?? null;
@@ -45,6 +46,7 @@ class BookingService
                 $bookings->push(
                     $this->createSingleBooking(
                         $customerId,
+                        $workerId,
                         $customerName,
                         $customerEmail,
                         $customerPhone,
@@ -114,6 +116,7 @@ class BookingService
      */
     protected function createSingleBooking(
         int $customerId,
+        ?int $workerId,
         ?string $customerName,
         ?string $customerEmail,
         ?string $customerPhone,
@@ -142,6 +145,7 @@ class BookingService
 
         return Booking::create([
             'customer_id' => $customerId,
+            'worker_id' => $workerId,
             'customer_name' => $customerName,
             'customer_email' => $customerEmail,
             'customer_phone' => $customerPhone,

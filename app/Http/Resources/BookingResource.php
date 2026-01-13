@@ -18,6 +18,7 @@ class BookingResource extends JsonResource
         return [
             'id' => $this->id,
             'customer_id' => $this->customer_id,
+            'worker_id' => $this->worker_id,
             'customer_name' => $this->customer_name,
             'customer_email' => $this->customer_email,
             'customer_phone' => $this->customer_phone,
@@ -36,6 +37,7 @@ class BookingResource extends JsonResource
             'created_at' => optional($this->created_at)->toIso8601String(),
             'updated_at' => optional($this->updated_at)->toIso8601String(),
             'customer' => $this->whenLoaded('customer'),
+            'worker' => $this->whenLoaded('worker'),
             'service' => $this->whenLoaded('service'),
             'service_category' => $this->whenLoaded('serviceCategory'),
             'service_subcategory' => $this->whenLoaded('serviceSubcategory'),
