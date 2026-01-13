@@ -312,28 +312,65 @@ class WorkerController extends Controller
         $worker = Worker::with('services')->where('user_id', $user->id)->first();
         
         if (!$worker) {
+            // Check if worker exists with this user's email (in case user_id wasn't set)
+            $worker = Worker::with('services')->where('email', $user->email)->first();
+            
+            if ($worker && !$worker->user_id) {
+                // Update the worker with the user_id if it's missing
+                $worker->user_id = $user->id;
+                $worker->save();
+            }
+        }
+        
+        if (!$worker) {
             return response()->json([
                 'success' => true,
                 'exists' => false,
                 'isComplete' => false,
-                'message' => 'Complete your info to get your job'
+                'message' => 'Complete your info to get your job',
+                'debug' => [
+                    'user_id' => $user->id,
+                    'user_email' => $user->email,
+                    'note' => 'No worker found with matching user_id or email'
+                ]
             ]);
         }
         
         // Check if required fields are filled
         $requiredFields = ['name', 'phone', 'email', 'age', 'expertise_of_service', 'shift', 'is_active'];
         $isComplete = true;
+        $missingFields = [];
         
         foreach ($requiredFields as $field) {
-            if (empty($worker->$field)) {
-                $isComplete = false;
-                break;
+            // Handle special cases
+            if ($field === 'is_active') {
+                // is_active can be 0 or false, which is valid, but null is not
+                if (is_null($worker->$field)) {
+                    $isComplete = false;
+                    $missingFields[] = $field;
+                }
+            } elseif ($field === 'expertise_of_service') {
+                // Check if it's an array and not empty
+                if (empty($worker->$field) || (is_array($worker->$field) && count($worker->$field) === 0)) {
+                    $isComplete = false;
+                    $missingFields[] = $field;
+                }
+            } else {
+                // For other fields, check if empty or null
+                $value = $worker->$field;
+                if (empty($value) && $value !== '0' && $value !== 0) {
+                    $isComplete = false;
+                    $missingFields[] = $field;
+                }
             }
         }
 
         // Check if worker has at least one service
         if ($worker->services->isEmpty()) {
             $isComplete = false;
+            if (!in_array('services', $missingFields)) {
+                $missingFields[] = 'services';
+            }
         }
         
         return response()->json([
@@ -341,6 +378,7 @@ class WorkerController extends Controller
             'exists' => true,
             'isComplete' => $isComplete,
             'message' => $isComplete ? 'Profile is complete' : 'Complete your info to get your job',
+            'missingFields' => $missingFields, // Add this for debugging
             'worker' => $worker
         ]);
     }

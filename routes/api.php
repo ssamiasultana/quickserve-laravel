@@ -63,6 +63,12 @@ Route::middleware(['jwt.auth'])->group(function () {
     
     // Bulk workers
     Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
+
+    // Get bookings for the authenticated worker
+    Route::get('/booking/worker/jobs', [BookingController::class, 'getBookingsByWorker']);
+    
+    // Update booking status (confirm/cancel) - only for workers
+    Route::patch('/booking/{booking}/status', [BookingController::class, 'updateBookingStatus']);
 });
 
 // Customer routes
@@ -90,6 +96,11 @@ Route::prefix('/booking')->group(function () {
     Route::get('/customer/{customerId}', [BookingController::class, 'getBookingsByCustomer']);
     Route::post('/batch', [BookingController::class, 'batchStore']);
     Route::get('/',[BookingController::class,'getAllBookings']);
+});
+
+Route::middleware(['jwt.auth'])->group(function () {
+    // Get bookings for the authenticated worker
+    Route::get('/booking/worker/jobs', [BookingController::class, 'getBookingsByWorker']);
 });
 
 Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);

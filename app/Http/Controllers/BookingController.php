@@ -8,6 +8,7 @@ use App\Http\Resources\BookingResource;
 use App\Models\Booking;
 use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
@@ -142,6 +143,151 @@ class BookingController extends Controller
         'total_bookings' => $bookings->count(),
         'message' => 'All bookings retrieved successfully'
     ]);
+    }
+
+    /**
+     * Get all bookings for a worker based on their services.
+     */
+    public function getBookingsByWorker(): JsonResponse
+    {
+        try {
+            $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get the worker with their services
+        $worker = \App\Models\Worker::with('services')->where('user_id', $user->id)->first();
+        
+        if (!$worker) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+                'total_bookings' => 0,
+                'message' => 'Worker not found'
+            ]);
+        }
+
+        // Get service IDs that the worker provides
+        $serviceIds = $worker->services->pluck('id')->toArray();
+        
+        if (empty($serviceIds)) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+                'total_bookings' => 0,
+                'message' => 'No services assigned to worker'
+            ]);
+        }
+
+        // Get bookings for services that this worker provides
+        $bookings = Booking::whereIn('service_id', $serviceIds)
+            ->with(['customer', 'service', 'serviceSubcategory'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => BookingResource::collection($bookings),
+            'total_bookings' => $bookings->count(),
+            'message' => 'Worker bookings retrieved successfully'
+        ]);
+    }
+
+    /**
+     * Update booking status (confirm or cancel).
+     * Only workers can update booking status for their assigned services.
+     */
+    public function updateBookingStatus(Request $request, Booking $booking): JsonResponse
+    {
+        try {
+            $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Validate the request
+            $request->validate([
+                'status' => 'required|in:confirmed,cancelled',
+            ]);
+
+            $newStatus = $request->input('status');
+
+            // Check if the booking can be updated (only pending or confirmed bookings can be cancelled)
+            if ($newStatus === 'cancelled' && !in_array($booking->status, ['pending', 'confirmed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot cancel a booking that is already paid or cancelled'
+                ], 400);
+            }
+
+            // Verify that the worker has access to this booking
+            // Get the worker with their services
+            $worker = \App\Models\Worker::with('services')->where('user_id', $user->id)->first();
+            
+            if (!$worker) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Worker profile not found'
+                ], 404);
+            }
+
+            // Get service IDs that the worker provides
+            $serviceIds = $worker->services->pluck('id')->toArray();
+            
+            if (!in_array($booking->service_id, $serviceIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to update this booking'
+                ], 403);
+            }
+
+            // Update the booking status
+            $booking->status = $newStatus;
+            $booking->save();
+
+            // Reload relationships
+            $booking->load(['customer', 'service', 'serviceSubcategory']);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Booking {$newStatus} successfully",
+                'data' => new BookingResource($booking)
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Failed to update booking status: ' . $e->getMessage(), [
+                'booking_id' => $booking->id,
+                'user_id' => $user->id ?? null,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update booking status',
+                'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
+            ], 500);
+        }
     }
 }
 
