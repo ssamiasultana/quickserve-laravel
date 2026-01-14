@@ -31,6 +31,40 @@ class BookingService
             $shiftType = $data['shift_type'];
             $scheduledAt = $data['scheduled_at'];
             $quantity = (int) ($data['quantity'] ?? 1);
+            
+            // Ensure scheduled_at is properly formatted
+            // The frontend sends datetime in format: YYYY-MM-DDTHH:mm:ss (intended as local time in Asia/Dhaka)
+            // Problem: Without timezone info, Carbon/Laravel interprets it as UTC, causing a 6-hour shift
+            // Solution: Treat the input as Asia/Dhaka time and convert to UTC by subtracting 6 hours
+            if (is_string($scheduledAt)) {
+                try {
+                    // Normalize the datetime string format
+                    $datetimeStr = str_replace('T', ' ', $scheduledAt);
+                    // Ensure seconds are present
+                    if (substr_count($datetimeStr, ':') === 1) {
+                        $datetimeStr .= ':00';
+                    }
+                    
+                    // Parse the datetime string as UTC (default behavior)
+                    $carbon = \Carbon\Carbon::createFromFormat('Y-m-d H:i:s', $datetimeStr, 'UTC');
+                    
+                    // Since the input represents a time in Asia/Dhaka (UTC+6),
+                    // we need to subtract 6 hours to get the equivalent UTC time
+                    // Example: Input "2024-01-20 09:00:00" means 9 AM Asia/Dhaka
+                    //          UTC equivalent is 3 AM UTC (9 AM - 6 hours)
+                    $carbon->subHours(6);
+                    
+                    // Format for database storage
+                    $scheduledAt = $carbon->format('Y-m-d H:i:s');
+                    
+                } catch (\Exception $e) {
+                    // If parsing fails, log and use as-is (Laravel will try to parse it)
+                    \Log::warning('Failed to parse scheduled_at', [
+                        'scheduled_at' => $scheduledAt,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
 
             // Normalize shift type - map 'flexible' to 'day' if enum doesn't support it
             // This handles cases where the database enum hasn't been updated yet
@@ -43,6 +77,11 @@ class BookingService
             }
 
             foreach ($data['services'] as $service) {
+                // Use quantity from service array if provided, otherwise use the main quantity
+                $serviceQuantity = isset($service['quantity']) 
+                    ? (int) $service['quantity'] 
+                    : $quantity;
+                
                 $bookings->push(
                     $this->createSingleBooking(
                         $customerId,
@@ -54,7 +93,7 @@ class BookingService
                         $specialInstructions,
                         $shiftType,
                         $scheduledAt,
-                        $quantity,
+                        $serviceQuantity,
                         $service
                     )
                 );

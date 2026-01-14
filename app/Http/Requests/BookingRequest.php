@@ -37,6 +37,7 @@ class BookingRequest extends FormRequest
             'services' => ['required', 'array', 'min:1'],
             'services.*.service_id' => ['required', 'exists:services,id'],
             'services.*.service_subcategory_id' => ['required', 'exists:service_subcategories,id'],
+            'services.*.quantity' => ['nullable', 'integer', 'min:1'], // Optional quantity per service
         ];
     }
     public function messages(): array
