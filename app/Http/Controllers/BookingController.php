@@ -76,7 +76,7 @@ class BookingController extends Controller
     public function getBookingsByCustomer($customerId): JsonResponse
     {
         $bookings = Booking::where('customer_id', $customerId)
-            ->with(['customer', 'service', 'serviceSubcategory'])
+            ->with(['customer', 'worker', 'service', 'serviceSubcategory'])
             ->orderByDesc('created_at')
             ->get();
 
