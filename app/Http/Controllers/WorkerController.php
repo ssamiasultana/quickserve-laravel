@@ -154,20 +154,108 @@ class WorkerController extends Controller
     }
    
 
-    public function updateWorker(Request $request, $id): JsonResponse
+    /**
+     * Get the current authenticated worker's profile
+     */
+    public function getProfile(Request $request): JsonResponse
     {
-        $worker = Worker::find($id);
-    
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get worker by user_id
+        $worker = Worker::with('services')->where('user_id', $user->id)->first();
+
+        // Fallback: try to find by email
+        if (!$worker) {
+            $worker = Worker::with('services')->where('email', $user->email)->first();
+            
+            if ($worker && !$worker->user_id) {
+                $worker->user_id = $user->id;
+                $worker->save();
+            }
+        }
+
         if (!$worker) {
             return response()->json([
                 'success' => false,
-                'message' => 'Worker not found'
+                'message' => 'Worker profile not found',
+                'data' => null
             ], 404);
         }
-        
+
+        return response()->json([
+            'success' => true,
+            'data' => $worker,
+            'message' => 'Profile retrieved successfully'
+        ]);
+    }
+
+    /**
+     * Update the current authenticated worker's profile
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get worker by user_id
+        $worker = Worker::with('services')->where('user_id', $user->id)->first();
+
+        // Fallback: try to find by email
+        if (!$worker) {
+            $worker = Worker::with('services')->where('email', $user->email)->first();
+            
+            if ($worker && !$worker->user_id) {
+                $worker->user_id = $user->id;
+                $worker->save();
+            }
+        }
+
+        if (!$worker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Worker profile not found'
+            ], 404);
+        }
+
+        // Use the existing update logic but with the found worker
+        return $this->updateWorkerData($request, $worker);
+    }
+
+    /**
+     * Update worker data (shared logic for updateWorker and updateProfile)
+     */
+    private function updateWorkerData(Request $request, Worker $worker): JsonResponse
+    {
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:workers,email,' . $id,
+            'email' => 'sometimes|email|unique:workers,email,' . $worker->id,
             'phone' => 'nullable|string|max:20',
             'age' => 'sometimes|integer|min:18',
             'image' => 'nullable|string',
@@ -207,7 +295,7 @@ class WorkerController extends Controller
             }
 
             // Check NID uniqueness (exclude current worker)
-            if (!NIDValidator::isUnique($validatedData['nid'], $id)) {
+            if (!NIDValidator::isUnique($validatedData['nid'], $worker->id)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'NID is already registered',
@@ -219,7 +307,7 @@ class WorkerController extends Controller
             if (isset($validatedData['age'])) {
                 // Log for debugging
                 \Log::info('Age validation (update)', [
-                    'worker_id' => $id,
+                    'worker_id' => $worker->id,
                     'nid' => $validatedData['nid'],
                     'age' => $validatedData['age'],
                     'raw_age' => $request->input('age')
@@ -260,6 +348,48 @@ class WorkerController extends Controller
             'data' => $worker,
             'message' => 'Worker updated successfully'
         ]);
+    }
+
+    public function updateWorker(Request $request, $id): JsonResponse
+    {
+        $worker = Worker::find($id);
+    
+        if (!$worker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Worker not found'
+            ], 404);
+        }
+
+        // Check authorization: Only admin/moderator or the worker themselves can update
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Allow admin/moderator to update any worker, or worker to update their own profile
+        $isAdminOrModerator = in_array($user->role, ['Admin', 'Moderator']);
+        $isOwnProfile = $worker->user_id == $user->id;
+
+        if (!$isAdminOrModerator && !$isOwnProfile) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized - You can only update your own profile'
+            ], 403);
+        }
+        
+        return $this->updateWorkerData($request, $worker);
     }
 
     public function deleteWorker($id): JsonResponse

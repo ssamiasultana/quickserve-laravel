@@ -37,8 +37,14 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware(['jwt.auth'])->group(function () {
 
     Route::get('/users', [AuthController::class, 'getAllUsers']);
+    // User profile routes (for Admin, Moderator, Customer)
+    Route::get('/user/profile', [AuthController::class, 'getProfile']);
+    Route::patch('/user/profile', [AuthController::class, 'updateProfile']);
+    
     // Worker profile routes
     Route::get('/worker/check-profile', [WorkerController::class, 'checkProfile']);
+    Route::get('/worker/profile', [WorkerController::class, 'getProfile']);
+    Route::patch('/worker/profile', [WorkerController::class, 'updateProfile']);
     
     // Worker CRUD routes
     Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);

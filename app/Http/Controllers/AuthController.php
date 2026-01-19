@@ -122,4 +122,113 @@ class AuthController extends Controller
         'data' => $users
     ]);
 }
+
+    /**
+     * Get the current authenticated user's profile
+     */
+    public function getProfile(Request $request): JsonResponse
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'phone' => $user->phone,
+            ],
+            'message' => 'Profile retrieved successfully'
+        ]);
+    }
+
+    /**
+     * Update the current authenticated user's profile
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $user->id,
+            'phone' => 'nullable|string|max:20',
+            'current_password' => 'required_with:update_password|string',
+            'password' => 'required_with:update_password|string|min:8|confirmed',
+            'update_password' => 'sometimes|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $validatedData = $validator->validated();
+
+        // Handle password update
+        if (isset($validatedData['update_password']) && $validatedData['update_password']) {
+            // Verify current password
+            if (!Hash::check($validatedData['current_password'], $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is incorrect',
+                    'errors' => ['current_password' => 'Current password is incorrect']
+                ], 422);
+            }
+
+            // Update password
+            $user->password = Hash::make($validatedData['password']);
+            unset($validatedData['password']);
+            unset($validatedData['password_confirmation']);
+            unset($validatedData['current_password']);
+            unset($validatedData['update_password']);
+        }
+
+        // Update other fields
+        $user->update($validatedData);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'phone' => $user->phone,
+            ],
+            'message' => 'Profile updated successfully'
+        ]);
+    }
 }
