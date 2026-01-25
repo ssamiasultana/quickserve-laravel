@@ -47,14 +47,14 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::patch('/worker/profile', [WorkerController::class, 'updateProfile']);
     
     // Worker CRUD routes
-    Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);
+   
     Route::post('/workers', [WorkerController::class, 'createWorker']);
     Route::get('/workers/paginated', [WorkerController::class, 'getPaginated']);
     Route::get('/workers/search', [WorkerController::class, 'searchWorkers']);
     Route::patch('/workers/{id}', [WorkerController::class, 'updateWorker']);
     Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
-    Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
-    Route::get('/workers/{serviceId}', [WorkerController::class, 'getWorkersByService']);
+    
+    
 
     Route::post('/workers/{id}/verify-nid', [WorkerController::class, 'verifyNID']);
     
@@ -76,6 +76,10 @@ Route::middleware(['jwt.auth'])->group(function () {
     // Update booking status (confirm/cancel) - only for workers
     Route::patch('/booking/{booking}/status', [BookingController::class, 'updateBookingStatus']);
 });
+
+Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);
+Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
+Route::get('/workers/{serviceId}', [WorkerController::class, 'getWorkersByService']);
 
 // Customer routes
 Route::get('/customers', [CustomerController::class, 'getAllCustomers']);
