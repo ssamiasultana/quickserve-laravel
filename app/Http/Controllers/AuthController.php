@@ -152,6 +152,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role,
                 'phone' => $user->phone,
+                'address' => $user->address,
             ],
             'message' => 'Profile retrieved successfully'
         ]);
@@ -182,6 +183,7 @@ class AuthController extends Controller
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $user->id,
             'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:255',
             'current_password' => 'required_with:update_password|string',
             'password' => 'required_with:update_password|string|min:8|confirmed',
             'update_password' => 'sometimes|boolean',
@@ -227,6 +229,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role,
                 'phone' => $user->phone,
+                'address' => $user->address,
             ],
             'message' => 'Profile updated successfully'
         ]);
