@@ -50,7 +50,7 @@ Route::middleware(['jwt.auth'])->group(function () {
    
     Route::post('/workers', [WorkerController::class, 'createWorker']);
     Route::get('/workers/paginated', [WorkerController::class, 'getPaginated']);
-    Route::get('/workers/search', [WorkerController::class, 'searchWorkers']);
+    
     Route::patch('/workers/{id}', [WorkerController::class, 'updateWorker']);
     Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
     
@@ -78,8 +78,15 @@ Route::middleware(['jwt.auth'])->group(function () {
 });
 
 Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);
-Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker']);
-Route::get('/workers/{serviceId}', [WorkerController::class, 'getWorkersByService']);
+
+// Place the search route BEFORE parameterised worker routes to avoid conflicts
+Route::get('/workers/search', [WorkerController::class, 'searchWorkers']);
+
+// Get workers by service – use a distinct URI segment to prevent route collisions
+Route::get('/workers/service/{serviceId}', [WorkerController::class, 'getWorkersByService']);
+
+// Get single worker by ID
+Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker'])->whereNumber('id');
 
 // Customer routes
 Route::get('/customers', [CustomerController::class, 'getAllCustomers']);
