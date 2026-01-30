@@ -10,6 +10,7 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\PasswordResetController; 
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\ModeratorController;
 use App\Http\Controllers\ServiceCategoryController;
 use App\Http\Controllers\BookingController;
 
@@ -91,6 +92,20 @@ Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker'])->where
 // Customer routes
 Route::get('/customers', [CustomerController::class, 'getAllCustomers']);
 Route::get('/customers/paginated', [CustomerController::class, 'getPaginated']);
+
+Route::middleware(['jwt.auth'])->group(function () {
+    Route::patch('/customers/{id}', [CustomerController::class, 'updateCustomer']);
+    Route::delete('/customers/{id}', [CustomerController::class, 'deleteCustomer']);
+    
+    // Moderator routes
+    Route::patch('/moderators/{id}', [ModeratorController::class, 'updateModerator']);
+    Route::delete('/moderators/{id}', [ModeratorController::class, 'deleteModerator']);
+});
+
+// Moderator routes (public get)
+Route::get('/moderators', [ModeratorController::class, 'getAllModerators']);
+Route::get('/moderators/paginated', [ModeratorController::class, 'getPaginated']);
+Route::get('/moderators/{id}', [ModeratorController::class, 'getSingleModerator'])->whereNumber('id');
 
 // Password reset routes
 Route::post('/password/forgot', [PasswordResetController::class, 'forgotPassword']);
