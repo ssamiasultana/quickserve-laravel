@@ -131,10 +131,11 @@ class BookingController extends Controller
      
         $bookings = Booking::with([
             'customer',
+            'worker',
             'service',
             'serviceSubcategory'
         ])
-        // ->orderByDesc('created_at')
+        ->orderByDesc('created_at')
         ->get();
 
     return response()->json([
