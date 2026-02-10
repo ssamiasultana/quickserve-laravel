@@ -271,12 +271,24 @@ class BookingController extends Controller
 
             // Verify that the worker has access to this booking
             // Get the worker with their services
+            // First try to find by user_id
             $worker = \App\Models\Worker::with('services')->where('user_id', $user->id)->first();
+            
+            // If not found by user_id, try to find by email (fallback for older records)
+            if (!$worker) {
+                $worker = \App\Models\Worker::with('services')->where('email', $user->email)->first();
+                
+                // If found by email but user_id is missing, update it
+                if ($worker && !$worker->user_id) {
+                    $worker->user_id = $user->id;
+                    $worker->save();
+                }
+            }
             
             if (!$worker) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Worker profile not found'
+                    'message' => 'Worker profile not found. Please complete your worker profile first.'
                 ], 404);
             }
 

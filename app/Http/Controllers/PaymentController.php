@@ -44,13 +44,21 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Get worker
+            // Get worker - try by user_id first, then by email
             $worker = Worker::where('user_id', $user->id)->first();
+            
+            if (!$worker) {
+                $worker = Worker::where('email', $user->email)->first();
+                if ($worker && !$worker->user_id) {
+                    $worker->user_id = $user->id;
+                    $worker->save();
+                }
+            }
             
             if (!$worker) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Worker profile not found'
+                    'message' => 'Worker profile not found. Please complete your worker profile first.'
                 ], 404);
             }
 
@@ -149,13 +157,21 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Get worker
+            // Get worker - try by user_id first, then by email
             $worker = Worker::where('user_id', $user->id)->first();
+            
+            if (!$worker) {
+                $worker = Worker::where('email', $user->email)->first();
+                if ($worker && !$worker->user_id) {
+                    $worker->user_id = $user->id;
+                    $worker->save();
+                }
+            }
             
             if (!$worker) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Worker profile not found'
+                    'message' => 'Worker profile not found. Please complete your worker profile first.'
                 ], 404);
             }
 
@@ -257,6 +273,14 @@ class PaymentController extends Controller
             // Use official SSL Commerz library
             $sslc = new SslCommerzNotification();
             
+            // Override callback URLs to use full backend URL (must be accessible from browser)
+            // IMPORTANT: Use Laravel's built-in server (port 8000) or configure Apache properly
+            $appUrl = config('app.url', env('APP_URL', 'http://localhost:8000'));
+            $post_data['success_url'] = rtrim($appUrl, '/') . '/api/success';
+            $post_data['fail_url'] = rtrim($appUrl, '/') . '/api/fail';
+            $post_data['cancel_url'] = rtrim($appUrl, '/') . '/api/cancel';
+            $post_data['ipn_url'] = rtrim($appUrl, '/') . '/api/ipn';
+            
             // For API response (not redirect), use 'checkout' type with 'json' pattern
             $payment_options = $sslc->makePayment($post_data, 'checkout', 'json');
 
@@ -323,6 +347,12 @@ class PaymentController extends Controller
             $amount = $request->input('amount');
             $currency = $request->input('currency', 'BDT');
 
+            Log::info('SSL Commerz success callback received', [
+                'tran_id' => $tranId,
+                'amount' => $amount,
+                'all_params' => $request->all(),
+            ]);
+
             // Find transaction by tran_id in notes
             $transaction = PaymentTransaction::where('notes', 'like', '%' . $tranId . '%')
                 ->where('status', 'pending')
@@ -330,8 +360,10 @@ class PaymentController extends Controller
 
             if (!$transaction) {
                 Log::error('SSL Commerz success: Transaction not found', ['tran_id' => $tranId]);
-                $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-                return redirect($frontendUrl . '/worker/submit-payment?status=error&message=Transaction not found');
+                $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Transaction not found');
+                Log::info('Redirecting to frontend', ['url' => $redirectUrl]);
+                return $this->htmlRedirect($redirectUrl);
             }
 
             // Use official SSL Commerz library for validation
@@ -349,8 +381,13 @@ class PaymentController extends Controller
 
                 DB::commit();
 
-                $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-                return redirect($frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $transaction->id);
+                $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $transaction->id;
+                Log::info('Payment validated successfully, redirecting to frontend', [
+                    'transaction_id' => $transaction->id,
+                    'redirect_url' => $redirectUrl,
+                ]);
+                return $this->htmlRedirect($redirectUrl);
             } else {
                 // Validation failed
                 $transaction->update([
@@ -358,8 +395,10 @@ class PaymentController extends Controller
                     'notes' => $transaction->notes . "\nValidation Failed at: " . now(),
                 ]);
 
-                $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-                return redirect($frontendUrl . '/worker/submit-payment?status=error&message=Payment verification failed');
+                $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment verification failed');
+                Log::warning('Payment validation failed, redirecting to frontend', ['redirect_url' => $redirectUrl]);
+                return $this->htmlRedirect($redirectUrl);
             }
 
         } catch (\Throwable $e) {
@@ -368,8 +407,10 @@ class PaymentController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            return redirect($frontendUrl . '/worker/submit-payment?status=error&message=Payment processing error');
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+            $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment processing error');
+            Log::error('Exception occurred, redirecting to frontend', ['redirect_url' => $redirectUrl]);
+            return $this->htmlRedirect($redirectUrl);
         }
     }
 
@@ -393,13 +434,13 @@ class PaymentController extends Controller
                 ]);
             }
 
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            return redirect($frontendUrl . '/worker/submit-payment?status=failed&message=Payment failed');
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=failed&message=' . urlencode('Payment failed'));
 
         } catch (\Throwable $e) {
             Log::error('SSL Commerz fail callback error: ' . $e->getMessage());
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            return redirect($frontendUrl . '/worker/submit-payment?status=error');
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=error');
         }
     }
 
@@ -423,13 +464,13 @@ class PaymentController extends Controller
                 ]);
             }
 
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            return redirect($frontendUrl . '/worker/submit-payment?status=cancelled&message=Payment cancelled');
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=cancelled&message=' . urlencode('Payment cancelled'));
 
         } catch (\Throwable $e) {
             Log::error('SSL Commerz cancel callback error: ' . $e->getMessage());
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            return redirect($frontendUrl . '/worker/submit-payment?status=error');
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=error');
         }
     }
 
@@ -519,12 +560,21 @@ class PaymentController extends Controller
                 ], 401);
             }
 
+            // Get worker - try by user_id first, then by email
             $worker = Worker::where('user_id', $user->id)->first();
+            
+            if (!$worker) {
+                $worker = Worker::where('email', $user->email)->first();
+                if ($worker && !$worker->user_id) {
+                    $worker->user_id = $user->id;
+                    $worker->save();
+                }
+            }
             
             if (!$worker) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Worker profile not found'
+                    'message' => 'Worker profile not found. Please complete your worker profile first.'
                 ], 404);
             }
 
@@ -842,5 +892,30 @@ class PaymentController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
             ], 500);
         }
+    }
+
+    /**
+     * Return HTML redirect page for SSL Commerz callbacks
+     * This is more reliable than HTTP redirects for payment gateway callbacks
+     */
+    private function htmlRedirect(string $url): \Illuminate\Http\Response
+    {
+        $html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="0;url=' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">
+    <title>Redirecting...</title>
+    <script type="text/javascript">
+        window.location.href = ' . json_encode($url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';
+    </script>
+</head>
+<body>
+    <p>Redirecting to payment page...</p>
+    <p>If you are not redirected automatically, <a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">click here</a>.</p>
+</body>
+</html>';
+
+        return response($html, 200)->header('Content-Type', 'text/html');
     }
 }

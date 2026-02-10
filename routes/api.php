@@ -136,10 +136,7 @@ Route::prefix('/booking')->group(function () {
     Route::get('/',[BookingController::class,'getAllBookings']);
 });
 
-Route::middleware(['jwt.auth'])->group(function () {
-    // Get bookings for the authenticated worker
-    Route::get('/booking/worker/jobs', [BookingController::class, 'getBookingsByWorker']);
-});
+// Removed duplicate route - already defined above in jwt.auth middleware group
 
 // Payment routes for workers (requires authentication)
 Route::middleware(['jwt.auth'])->group(function () {
@@ -157,14 +154,14 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/payments/all-transactions', [PaymentController::class, 'getAllTransactions']);
 });
 
-// SSL Commerz callbacks (no auth required - accepts both GET and POST)
-Route::match(['get', 'post'], '/success', [PaymentController::class, 'sslCommerzSuccess']);
-Route::match(['get', 'post'], '/fail', [PaymentController::class, 'sslCommerzFail']);
-Route::match(['get', 'post'], '/cancel', [PaymentController::class, 'sslCommerzCancel']);
-Route::post('/ipn', [PaymentController::class, 'sslCommerzIpn']);
+// SSL Commerz callbacks are handled in web.php for better compatibility with external POST requests
+// These routes need to be accessible without API middleware and CSRF protection
 
 // Example routes (for testing - can be removed in production)
 Route::get('/example1', [SslCommerzPaymentController::class, 'exampleEasyCheckout']);
 Route::get('/example2', [SslCommerzPaymentController::class, 'exampleHostedCheckout']);
 Route::post('/pay', [SslCommerzPaymentController::class, 'index']);
 Route::post('/pay-via-ajax', [SslCommerzPaymentController::class, 'payViaAjax']);
+
+// Note: SSL Commerz callback routes are also defined in web.php for better compatibility
+// Routes in api.php are automatically prefixed with /api, so /success becomes /api/success
