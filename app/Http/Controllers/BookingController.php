@@ -236,26 +236,36 @@ class BookingController extends Controller
                 ], 401);
             }
 
-            // Validate the request
+            // Validate the request - allow paid, confirmed, or cancelled
             $request->validate([
-                'status' => 'required|in:confirmed,cancelled',
+                'status' => 'required|in:paid,confirmed,cancelled',
             ]);
 
             $newStatus = $request->input('status');
+            $currentStatus = $booking->status;
 
-            // Check if the booking can be cancelled (only pending bookings can be cancelled)
-            if ($newStatus === 'cancelled' && $booking->status !== 'pending') {
+            // Status transition rules:
+            // - cancelled: only from pending
+            // - confirmed: from pending
+            // - paid: from pending or confirmed (when payment is received)
+            if ($newStatus === 'cancelled' && $currentStatus !== 'pending') {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot cancel a booking that is already confirmed, paid, or cancelled'
                 ], 400);
             }
 
-            // Check if the booking can be confirmed (only pending bookings can be confirmed)
-            if ($newStatus === 'confirmed' && $booking->status !== 'pending') {
+            if ($newStatus === 'confirmed' && $currentStatus !== 'pending') {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot confirm a booking that is already confirmed, paid, or cancelled'
+                ], 400);
+            }
+
+            if ($newStatus === 'paid' && !in_array($currentStatus, ['pending', 'confirmed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Can only mark pending or confirmed bookings as paid'
                 ], 400);
             }
 

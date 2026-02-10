@@ -31,4 +31,14 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'sslcommerz' => [
+        'store_id' => env('SSLCOMMERZ_STORE_ID'),
+        'store_password' => env('SSLCOMMERZ_STORE_PASSWORD'),
+        'api_url' => env('SSLCOMMERZ_API_URL', 'https://sandbox.sslcommerz.com'),
+        'success_url' => env('SSLCOMMERZ_SUCCESS_URL', url('/api/payments/sslcommerz/success')),
+        'fail_url' => env('SSLCOMMERZ_FAIL_URL', url('/api/payments/sslcommerz/fail')),
+        'cancel_url' => env('SSLCOMMERZ_CANCEL_URL', url('/api/payments/sslcommerz/cancel')),
+        'ipn_url' => env('SSLCOMMERZ_IPN_URL', url('/api/payments/sslcommerz/ipn')),
+    ],
+
 ];

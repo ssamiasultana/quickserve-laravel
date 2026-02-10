@@ -31,6 +31,7 @@ class BookingService
             $shiftType = $data['shift_type'];
             $scheduledAt = $data['scheduled_at'];
             $quantity = (int) ($data['quantity'] ?? 1);
+            $paymentMethod = $data['payment_method'] ?? 'cash';
             
             // Ensure scheduled_at is properly formatted
             // The frontend sends datetime in format: YYYY-MM-DDTHH:mm:ss (intended as local time in Asia/Dhaka)
@@ -94,6 +95,7 @@ class BookingService
                         $shiftType,
                         $scheduledAt,
                         $serviceQuantity,
+                        $paymentMethod,
                         $service
                     )
                 );
@@ -164,6 +166,7 @@ class BookingService
         string $shiftType,
         string $scheduledAt,
         int $quantity,
+        string $paymentMethod,
         array $service
     ): Booking {
         /** @var \App\Models\ServiceSubcategory $subcategory */
@@ -182,6 +185,11 @@ class BookingService
         $shiftCharge = $subtotal * ($shiftChargePercent / 100);
         $totalAmount = $subtotal + $shiftCharge;
 
+        // New bookings always start as 'pending' regardless of payment method
+        // Workers need to confirm the booking first, then mark as paid when payment is received
+        // Payment method indicates how customer will pay, not that payment has been received
+        $bookingStatus = 'pending';
+
         return Booking::create([
             'customer_id' => $customerId,
             'worker_id' => $workerId,
@@ -198,6 +206,8 @@ class BookingService
             'shift_type' => $shiftType,
             'shift_charge_percent' => $shiftChargePercent,
             'total_amount' => $totalAmount,
+            'payment_method' => $paymentMethod,
+            'status' => $bookingStatus,
             'scheduled_at' => $scheduledAt,
         ]);
     }

@@ -35,6 +35,7 @@ class Booking extends Model
         'shift_charge_percent',
         'total_amount',
         'status',
+        'payment_method',
         'scheduled_at',
     ];
 
@@ -75,6 +76,11 @@ class Booking extends Model
     public function worker(): BelongsTo
     {
         return $this->belongsTo(Worker::class, 'worker_id');
+    }
+
+    public function paymentTransactions()
+    {
+        return $this->hasMany(PaymentTransaction::class);
     }
     public function isPending(): bool
     {

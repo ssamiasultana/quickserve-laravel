@@ -13,6 +13,8 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\ModeratorController;
 use App\Http\Controllers\ServiceCategoryController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\SslCommerzPaymentController;
 
 
 
@@ -76,7 +78,11 @@ Route::middleware(['jwt.auth'])->group(function () {
     
     // Update booking status (confirm/cancel) - only for workers
     Route::patch('/booking/{booking}/status', [BookingController::class, 'updateBookingStatus']);
+
+   
 });
+
+
 
 Route::get('/getWorkers', [WorkerController::class, 'getAllWorkers']);
 
@@ -135,4 +141,30 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/booking/worker/jobs', [BookingController::class, 'getBookingsByWorker']);
 });
 
-Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
+// Payment routes for workers (requires authentication)
+Route::middleware(['jwt.auth'])->group(function () {
+    Route::post('/payments/submit-commission', [PaymentController::class, 'submitCommissionPayment']);
+    Route::post('/payments/sslcommerz/initiate', [PaymentController::class, 'initiateSslCommerzPayment']);
+    Route::get('/payments/worker/transactions', [PaymentController::class, 'getWorkerTransactions']);
+});
+
+// Payment routes for admin (requires authentication)
+Route::middleware(['jwt.auth'])->group(function () {
+    Route::get('/payments/pending-commission-payments', [PaymentController::class, 'getPendingCommissionPayments']);
+    Route::post('/payments/commission-payment/{transaction}/process', [PaymentController::class, 'processCommissionPayment']);
+    Route::get('/payments/pending-online-payments', [PaymentController::class, 'getPendingOnlinePayments']);
+    Route::post('/payments/send-online-payment', [PaymentController::class, 'sendOnlinePayment']);
+    Route::get('/payments/all-transactions', [PaymentController::class, 'getAllTransactions']);
+});
+
+// SSL Commerz callbacks (no auth required - accepts both GET and POST)
+Route::match(['get', 'post'], '/success', [PaymentController::class, 'sslCommerzSuccess']);
+Route::match(['get', 'post'], '/fail', [PaymentController::class, 'sslCommerzFail']);
+Route::match(['get', 'post'], '/cancel', [PaymentController::class, 'sslCommerzCancel']);
+Route::post('/ipn', [PaymentController::class, 'sslCommerzIpn']);
+
+// Example routes (for testing - can be removed in production)
+Route::get('/example1', [SslCommerzPaymentController::class, 'exampleEasyCheckout']);
+Route::get('/example2', [SslCommerzPaymentController::class, 'exampleHostedCheckout']);
+Route::post('/pay', [SslCommerzPaymentController::class, 'index']);
+Route::post('/pay-via-ajax', [SslCommerzPaymentController::class, 'payViaAjax']);
