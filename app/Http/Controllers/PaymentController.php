@@ -338,6 +338,169 @@ class PaymentController extends Controller
     }
 
     /**
+     * Initiate SSL Commerz payment for customer booking
+     */
+    public function initiateCustomerSslCommerzPayment(Request $request): JsonResponse
+    {
+        try {
+            $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'booking_id' => 'required|exists:booking,id',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Get booking
+            $booking = Booking::where('id', $request->booking_id)->first();
+
+            if (!$booking) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Booking not found'
+                ], 404);
+            }
+
+            // Check if booking already has online payment transaction
+            $existingTransaction = PaymentTransaction::where('booking_id', $booking->id)
+                ->where('transaction_type', 'online_payment')
+                ->whereIn('status', ['pending', 'completed'])
+                ->first();
+
+            if ($existingTransaction) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment already initiated for this booking'
+                ], 400);
+            }
+
+            // Generate unique transaction ID
+            $tranId = 'CUST' . date('YmdHis') . $booking->id . rand(1000, 9999);
+
+            // Create pending transaction
+            $transaction = PaymentTransaction::create([
+                'booking_id' => $booking->id,
+                'worker_id' => $booking->worker_id,
+                'transaction_type' => 'online_payment',
+                'amount' => $booking->total_amount,
+                'status' => 'pending',
+                'notes' => 'SSL Commerz Payment - Customer Booking - Transaction ID: ' . $tranId,
+            ]);
+
+            // Prepare SSL Commerz payment data
+            $post_data = [];
+            $post_data['total_amount'] = number_format($booking->total_amount, 2, '.', '');
+            $post_data['currency'] = "BDT";
+            $post_data['tran_id'] = $tranId;
+
+            // CUSTOMER INFORMATION
+            $post_data['cus_name'] = $booking->customer_name ?? $user->name ?? 'Customer';
+            $post_data['cus_email'] = $booking->customer_email ?? $user->email ?? '';
+            $post_data['cus_add1'] = $booking->service_address ?? 'N/A';
+            $post_data['cus_add2'] = "";
+            $post_data['cus_city'] = "Dhaka";
+            $post_data['cus_state'] = "";
+            $post_data['cus_postcode'] = "";
+            $post_data['cus_country'] = "Bangladesh";
+            $post_data['cus_phone'] = $booking->customer_phone ?? '';
+            $post_data['cus_fax'] = "";
+
+            // SHIPMENT INFORMATION
+            $post_data['shipping_method'] = "NO";
+            $post_data['product_name'] = "Service Booking - Booking #" . $booking->id;
+            $post_data['product_category'] = "Service Booking";
+            $post_data['product_profile'] = "general";
+
+            // OPTIONAL PARAMETERS
+            $post_data['value_a'] = $booking->id; // Booking ID
+            $post_data['value_b'] = $user->id; // Customer User ID
+            $post_data['value_c'] = $transaction->id; // Payment Transaction ID
+            $post_data['value_d'] = "customer_payment"; // Payment type identifier
+
+            // Verify SSL Commerz config
+            $sslConfig = config('sslcommerz');
+            if (empty($sslConfig['apiCredentials']['store_id']) || empty($sslConfig['apiCredentials']['store_password'])) {
+                Log::error('SSL Commerz credentials missing', [
+                    'store_id' => $sslConfig['apiCredentials']['store_id'] ?? 'NOT SET',
+                    'store_password' => isset($sslConfig['apiCredentials']['store_password']) ? 'SET' : 'NOT SET',
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'SSL Commerz configuration error. Please check your .env file.',
+                ], 500);
+            }
+
+            // Use official SSL Commerz library
+            $sslc = new SslCommerzNotification();
+            
+            $appUrl = config('app.url', env('APP_URL', 'http://localhost:8000'));
+            $post_data['success_url'] = rtrim($appUrl, '/') . '/api/success';
+            $post_data['fail_url'] = rtrim($appUrl, '/') . '/api/fail';
+            $post_data['cancel_url'] = rtrim($appUrl, '/') . '/api/cancel';
+            $post_data['ipn_url'] = rtrim($appUrl, '/') . '/api/ipn';
+            
+            $payment_options = $sslc->makePayment($post_data, 'checkout', 'json');
+            $payment_data = json_decode($payment_options, true);
+
+            if (is_array($payment_data) && isset($payment_data['status']) && $payment_data['status'] === 'success' && isset($payment_data['data'])) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payment session created successfully',
+                    'payment_url' => $payment_data['data'],
+                    'transaction_id' => $transaction->id,
+                    'tran_id' => $tranId,
+                ]);
+            } else {
+                $transaction->delete();
+
+                $errorMessage = 'Failed to initiate payment';
+                if (is_array($payment_data) && isset($payment_data['message'])) {
+                    $errorMessage = $payment_data['message'];
+                } elseif (is_string($payment_options)) {
+                    $errorMessage = $payment_options;
+                }
+
+                Log::error('SSL Commerz customer payment initiation failed', [
+                    'payment_response' => $payment_options,
+                    'decoded_response' => $payment_data,
+                    'booking_id' => $booking->id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                ], 400);
+            }
+
+        } catch (\Throwable $e) {
+            Log::error('SSL Commerz customer payment initiation failed: ' . $e->getMessage(), [
+                'data' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to initiate payment',
+                'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
+            ], 500);
+        }
+    }
+
+    /**
      * SSL Commerz success callback
      */
     public function sslCommerzSuccess(Request $request)
@@ -361,7 +524,11 @@ class PaymentController extends Controller
             if (!$transaction) {
                 Log::error('SSL Commerz success: Transaction not found', ['tran_id' => $tranId]);
                 $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Transaction not found');
+                // Try to determine redirect based on value_d parameter
+                $isCustomerPayment = $request->input('value_d') === 'customer_payment';
+                $redirectUrl = $isCustomerPayment 
+                    ? $frontendUrl . '/customer/my-booking?status=error&message=' . urlencode('Transaction not found')
+                    : $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Transaction not found');
                 Log::info('Redirecting to frontend', ['url' => $redirectUrl]);
                 return $this->htmlRedirect($redirectUrl);
             }
@@ -373,30 +540,58 @@ class PaymentController extends Controller
             if ($validation) {
                 DB::beginTransaction();
 
+                // Check if this is a customer payment or worker commission payment
+                $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
+                    || $transaction->transaction_type === 'online_payment';
+
                 // Update transaction status
                 $transaction->update([
                     'status' => 'completed',
                     'notes' => $transaction->notes . "\nSSL Commerz Val ID: " . ($request->input('val_id') ?? 'N/A') . "\nVerified: " . now(),
                 ]);
 
+                // Update booking status to 'paid' if it's a customer payment
+                if ($isCustomerPayment && $transaction->booking_id) {
+                    $booking = Booking::find($transaction->booking_id);
+                    if ($booking && $booking->status !== 'paid') {
+                        $booking->update([
+                            'status' => 'paid',
+                            'payment_method' => 'online',
+                        ]);
+                    }
+                }
+
                 DB::commit();
 
                 $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $transaction->id;
+                
+                // Redirect based on payment type
+                if ($isCustomerPayment) {
+                    $redirectUrl = $frontendUrl . '/customer/my-booking?status=success&transaction_id=' . $transaction->id;
+                } else {
+                    $redirectUrl = $frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $transaction->id;
+                }
+                
                 Log::info('Payment validated successfully, redirecting to frontend', [
                     'transaction_id' => $transaction->id,
+                    'payment_type' => $isCustomerPayment ? 'customer' : 'worker',
                     'redirect_url' => $redirectUrl,
                 ]);
                 return $this->htmlRedirect($redirectUrl);
             } else {
                 // Validation failed
+                $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
+                    || ($transaction && $transaction->transaction_type === 'online_payment');
+                    
                 $transaction->update([
                     'status' => 'rejected',
                     'notes' => $transaction->notes . "\nValidation Failed at: " . now(),
                 ]);
 
                 $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment verification failed');
+                $redirectUrl = $isCustomerPayment
+                    ? $frontendUrl . '/customer/my-booking?status=error&message=' . urlencode('Payment verification failed')
+                    : $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment verification failed');
                 Log::warning('Payment validation failed, redirecting to frontend', ['redirect_url' => $redirectUrl]);
                 return $this->htmlRedirect($redirectUrl);
             }
@@ -407,8 +602,11 @@ class PaymentController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            $isCustomerPayment = $request->input('value_d') === 'customer_payment';
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment processing error');
+            $redirectUrl = $isCustomerPayment
+                ? $frontendUrl . '/customer/my-booking?status=error&message=' . urlencode('Payment processing error')
+                : $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment processing error');
             Log::error('Exception occurred, redirecting to frontend', ['redirect_url' => $redirectUrl]);
             return $this->htmlRedirect($redirectUrl);
         }
@@ -427,6 +625,9 @@ class PaymentController extends Controller
                 ->where('status', 'pending')
                 ->first();
 
+            $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
+                || ($transaction && $transaction->transaction_type === 'online_payment');
+
             if ($transaction) {
                 $transaction->update([
                     'status' => 'rejected',
@@ -435,12 +636,19 @@ class PaymentController extends Controller
             }
 
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=failed&message=' . urlencode('Payment failed'));
+            $redirectUrl = $isCustomerPayment
+                ? $frontendUrl . '/customer/my-booking?status=failed&message=' . urlencode('Payment failed')
+                : $frontendUrl . '/worker/submit-payment?status=failed&message=' . urlencode('Payment failed');
+            return $this->htmlRedirect($redirectUrl);
 
         } catch (\Throwable $e) {
             Log::error('SSL Commerz fail callback error: ' . $e->getMessage());
+            $isCustomerPayment = $request->input('value_d') === 'customer_payment';
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=error');
+            $redirectUrl = $isCustomerPayment
+                ? $frontendUrl . '/customer/my-booking?status=error'
+                : $frontendUrl . '/worker/submit-payment?status=error';
+            return $this->htmlRedirect($redirectUrl);
         }
     }
 
@@ -457,6 +665,9 @@ class PaymentController extends Controller
                 ->where('status', 'pending')
                 ->first();
 
+            $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
+                || ($transaction && $transaction->transaction_type === 'online_payment');
+
             if ($transaction) {
                 $transaction->update([
                     'status' => 'rejected',
@@ -465,12 +676,19 @@ class PaymentController extends Controller
             }
 
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=cancelled&message=' . urlencode('Payment cancelled'));
+            $redirectUrl = $isCustomerPayment
+                ? $frontendUrl . '/customer/my-booking?status=cancelled&message=' . urlencode('Payment cancelled')
+                : $frontendUrl . '/worker/submit-payment?status=cancelled&message=' . urlencode('Payment cancelled');
+            return $this->htmlRedirect($redirectUrl);
 
         } catch (\Throwable $e) {
             Log::error('SSL Commerz cancel callback error: ' . $e->getMessage());
+            $isCustomerPayment = $request->input('value_d') === 'customer_payment';
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            return $this->htmlRedirect($frontendUrl . '/worker/submit-payment?status=error');
+            $redirectUrl = $isCustomerPayment
+                ? $frontendUrl . '/customer/my-booking?status=error'
+                : $frontendUrl . '/worker/submit-payment?status=error';
+            return $this->htmlRedirect($redirectUrl);
         }
     }
 

@@ -145,6 +145,11 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/payments/worker/transactions', [PaymentController::class, 'getWorkerTransactions']);
 });
 
+// Payment routes for customers (requires authentication)
+Route::middleware(['jwt.auth'])->group(function () {
+    Route::post('/payments/sslcommerz/customer/initiate', [PaymentController::class, 'initiateCustomerSslCommerzPayment']);
+});
+
 // Payment routes for admin (requires authentication)
 Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/payments/pending-commission-payments', [PaymentController::class, 'getPendingCommissionPayments']);
