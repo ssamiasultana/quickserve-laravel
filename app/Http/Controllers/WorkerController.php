@@ -412,7 +412,9 @@ class WorkerController extends Controller
     }
     
     public function getSingleWorker(Request $request,$id):JsonResponse{
-        $worker = Worker::with('services')->find($id);    
+        // Include services and reviews so that average_rating and total_reviews
+        // can be calculated efficiently for the worker profile
+        $worker = Worker::with(['services', 'reviews'])->find($id);    
         if (!$worker) {
             return response()->json([
                 'success' => false,
@@ -536,7 +538,7 @@ class WorkerController extends Controller
     }
 public function searchWorkers(Request $request)
     {
-        $query = Worker::with('services');
+        $query = Worker::with(['services', 'reviews']);
         
         $searchTerm = trim($request->input('search', ''));
         
@@ -557,17 +559,22 @@ public function searchWorkers(Request $request)
                 $serviceQuery->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($service) . '%']);
             });
         }
-
-
         
         // Filter by shift
         if ($request->has('shift') && !empty(trim($request->shift))) {
             $query->where('shift', $request->shift);
         }
 
-      
+        // Only show active workers
+        $query->where('is_active', true);
         
         $workers = $query->get();
+        
+        // Calculate average ratings for each worker
+        $workers->each(function($worker) {
+            $worker->average_rating = $worker->reviews->avg('rating') ? round($worker->reviews->avg('rating'), 2) : 0;
+            $worker->total_reviews = $worker->reviews->count();
+        });
         
         return response()->json([
             'success' => true,

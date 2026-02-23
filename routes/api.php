@@ -15,6 +15,7 @@ use App\Http\Controllers\ServiceCategoryController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\SslCommerzPaymentController;
+use App\Http\Controllers\ReviewController;
 
 
 
@@ -76,9 +77,11 @@ Route::middleware(['jwt.auth'])->group(function () {
     // Get bookings for the authenticated worker
     Route::get('/booking/worker/jobs', [BookingController::class, 'getBookingsByWorker']);
     
-    // Update booking status (confirm/cancel) - only for workers
+    // Update booking status (confirm/cancel) - for workers and moderators
     Route::patch('/booking/{booking}/status', [BookingController::class, 'updateBookingStatus']);
 
+    // Review routes (requires authentication)
+    Route::post('/reviews', [ReviewController::class, 'createReview']);
    
 });
 
@@ -94,6 +97,10 @@ Route::get('/workers/service/{serviceId}', [WorkerController::class, 'getWorkers
 
 // Get single worker by ID
 Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker'])->whereNumber('id');
+
+// Review routes (public get)
+Route::get('/workers/{workerId}/reviews', [ReviewController::class, 'getWorkerReviews']);
+Route::get('/bookings/{bookingId}/review', [ReviewController::class, 'getBookingReview']);
 
 // Customer routes
 Route::get('/customers', [CustomerController::class, 'getAllCustomers']);

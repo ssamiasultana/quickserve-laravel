@@ -34,6 +34,17 @@ class Worker extends Model
         'nid_verified' => 'boolean',        
         'nid_verified_at' => 'datetime', 
     ];
+
+    /**
+     * The accessors to append to the model's array and JSON forms.
+     *
+     * This ensures customer rating statistics are always available
+     * in API responses (e.g., average_rating, total_reviews).
+     */
+    protected $appends = [
+        'average_rating',
+        'total_reviews',
+    ];
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -42,6 +53,31 @@ class Worker extends Model
     {
         return $this->belongsToMany(Services::class, 'service_worker', 'worker_id', 'service_id')
                     ->withTimestamps();
+    }
+
+    /**
+     * Get all reviews for this worker.
+     */
+    public function reviews()
+    {
+        return $this->hasMany(Review::class);
+    }
+
+    /**
+     * Get the average rating for this worker from customer reviews.
+     */
+    public function getAverageRatingAttribute()
+    {
+        $avgRating = $this->reviews()->avg('rating');
+        return $avgRating ? round($avgRating, 2) : 0;
+    }
+
+    /**
+     * Get the total number of reviews for this worker.
+     */
+    public function getTotalReviewsAttribute()
+    {
+        return $this->reviews()->count();
     }
     
     public function isAdmin(): bool

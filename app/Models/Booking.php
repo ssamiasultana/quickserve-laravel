@@ -82,6 +82,23 @@ class Booking extends Model
     {
         return $this->hasMany(PaymentTransaction::class);
     }
+
+    /**
+     * Get the review for this booking (if exists).
+     */
+    public function review()
+    {
+        return $this->hasOne(Review::class);
+    }
+
+    /**
+     * Check if this booking has been reviewed.
+     */
+    public function hasReview(): bool
+    {
+        return $this->review()->exists();
+    }
+
     public function isPending(): bool
     {
         return $this->status === 'pending';

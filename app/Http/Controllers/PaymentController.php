@@ -552,13 +552,23 @@ class PaymentController extends Controller
 
                 // Update booking status to 'paid' if it's a customer payment
                 if ($isCustomerPayment && $transaction->booking_id) {
-                    $booking = Booking::find($transaction->booking_id);
-                    if ($booking && $booking->status !== 'paid') {
-                        $booking->update([
+                    // Use direct database update to avoid any datetime casting issues with scheduled_at
+                    // This ensures scheduled_at is not re-processed during the update
+                    // Only update status and payment_method, explicitly exclude scheduled_at
+                    DB::table('booking')
+                        ->where('id', $transaction->booking_id)
+                        ->where('status', '!=', 'paid')
+                        ->update([
                             'status' => 'paid',
                             'payment_method' => 'online',
+                            'updated_at' => now(),
                         ]);
-                    }
+                    
+                    // Log for debugging
+                    Log::info('Booking updated after payment', [
+                        'booking_id' => $transaction->booking_id,
+                        'scheduled_at_before' => DB::table('booking')->where('id', $transaction->booking_id)->value('scheduled_at'),
+                    ]);
                 }
 
                 DB::commit();

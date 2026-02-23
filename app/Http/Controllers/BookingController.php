@@ -222,7 +222,7 @@ class BookingController extends Controller
 
     /**
      * Update booking status (confirm or cancel).
-     * Only workers can update booking status for their assigned services.
+     * Workers and Moderators can update booking status.
      */
     public function updateBookingStatus(Request $request, Booking $booking): JsonResponse
     {
@@ -269,37 +269,60 @@ class BookingController extends Controller
                 ], 400);
             }
 
-            // Verify that the worker has access to this booking
-            // Get the worker with their services
-            // First try to find by user_id
-            $worker = \App\Models\Worker::with('services')->where('user_id', $user->id)->first();
+            // Check if user is Moderator or Admin - they have full access
+            $isModeratorOrAdmin = in_array($user->role, ['Moderator', 'Admin']);
             
-            // If not found by user_id, try to find by email (fallback for older records)
-            if (!$worker) {
-                $worker = \App\Models\Worker::with('services')->where('email', $user->email)->first();
-                
-                // If found by email but user_id is missing, update it
-                if ($worker && !$worker->user_id) {
-                    $worker->user_id = $user->id;
-                    $worker->save();
+            if ($isModeratorOrAdmin) {
+                // Moderators and Admins can update any booking
+                // Also assign worker if booking doesn't have one and status is being confirmed
+                if ($newStatus === 'confirmed' && !$booking->worker_id && $request->has('worker_id')) {
+                    $booking->worker_id = $request->input('worker_id');
                 }
-            }
-            
-            if (!$worker) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Worker profile not found. Please complete your worker profile first.'
-                ], 404);
-            }
+            } else {
+                // For Workers, verify they have access to this booking
+                $worker = \App\Models\Worker::with('services')->where('user_id', $user->id)->first();
+                
+                // If not found by user_id, try to find by email (fallback for older records)
+                if (!$worker) {
+                    $worker = \App\Models\Worker::with('services')->where('email', $user->email)->first();
+                    
+                    // If found by email but user_id is missing, update it
+                    if ($worker && !$worker->user_id) {
+                        $worker->user_id = $user->id;
+                        $worker->save();
+                    }
+                }
+                
+                if (!$worker) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Worker profile not found. Please complete your worker profile first.'
+                    ], 404);
+                }
 
-            // Get service IDs that the worker provides
-            $serviceIds = $worker->services->pluck('id')->toArray();
-            
-            if (!in_array($booking->service_id, $serviceIds)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You do not have permission to update this booking'
-                ], 403);
+                // Get service IDs that the worker provides
+                $serviceIds = $worker->services->pluck('id')->toArray();
+                
+                // If booking has a worker_id, verify it matches the authenticated worker
+                if ($booking->worker_id && $booking->worker_id !== $worker->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have permission to update this booking'
+                    ], 403);
+                }
+                
+                // If booking doesn't have a worker_id, verify the worker provides the service
+                if (!$booking->worker_id && !in_array($booking->service_id, $serviceIds)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have permission to update this booking'
+                    ], 403);
+                }
+                
+                // If confirming and no worker assigned, assign this worker
+                if ($newStatus === 'confirmed' && !$booking->worker_id) {
+                    $booking->worker_id = $worker->id;
+                }
             }
 
             // Update the booking status
@@ -307,7 +330,7 @@ class BookingController extends Controller
             $booking->save();
 
             // Reload relationships
-            $booking->load(['customer', 'service', 'serviceSubcategory']);
+            $booking->load(['customer', 'service', 'serviceSubcategory', 'worker']);
 
             return response()->json([
                 'success' => true,

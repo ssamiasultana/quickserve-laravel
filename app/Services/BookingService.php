@@ -35,8 +35,7 @@ class BookingService
             
             // Ensure scheduled_at is properly formatted
             // The frontend sends datetime in format: YYYY-MM-DDTHH:mm:ss (intended as local time in Asia/Dhaka)
-            // Problem: Without timezone info, Carbon/Laravel interprets it as UTC, causing a 6-hour shift
-            // Solution: Treat the input as Asia/Dhaka time and convert to UTC by subtracting 6 hours
+            // Solution: Parse the datetime as Asia/Dhaka timezone, then convert to UTC for storage
             if (is_string($scheduledAt)) {
                 try {
                     // Normalize the datetime string format
@@ -46,17 +45,67 @@ class BookingService
                         $datetimeStr .= ':00';
                     }
                     
-                    // Parse the datetime string as UTC (default behavior)
-                    $carbon = \Carbon\Carbon::createFromFormat('Y-m-d H:i:s', $datetimeStr, 'UTC');
+                    // Parse the datetime string and treat it as Asia/Dhaka timezone
+                    // The datetime string from frontend represents a time in Asia/Dhaka timezone
+                    // We need to parse it as Asia/Dhaka and convert to UTC for storage
                     
-                    // Since the input represents a time in Asia/Dhaka (UTC+6),
-                    // we need to subtract 6 hours to get the equivalent UTC time
-                    // Example: Input "2024-01-20 09:00:00" means 9 AM Asia/Dhaka
-                    //          UTC equivalent is 3 AM UTC (9 AM - 6 hours)
+                    // Parse the datetime components
+                    // Format: "YYYY-MM-DD HH:mm:ss"
+                    $parts = explode(' ', $datetimeStr);
+                    if (count($parts) !== 2) {
+                        throw new \Exception('Invalid datetime format: ' . $datetimeStr);
+                    }
+                    
+                    list($datePart, $timePart) = $parts;
+                    $dateComponents = explode('-', $datePart);
+                    $timeComponents = explode(':', $timePart);
+                    
+                    if (count($dateComponents) !== 3 || count($timeComponents) < 2) {
+                        throw new \Exception('Invalid datetime components: ' . $datetimeStr);
+                    }
+                    
+                    list($year, $month, $day) = $dateComponents;
+                    $hour = $timeComponents[0];
+                    $minute = $timeComponents[1];
+                    $second = $timeComponents[2] ?? '00';
+                    
+                    // Create datetime string
+                    $datetimeString = sprintf('%04d-%02d-%02d %02d:%02d:%02d', 
+                        (int)$year, (int)$month, (int)$day, 
+                        (int)$hour, (int)$minute, (int)$second
+                    );
+                    
+                    // Manual timezone conversion: Asia/Dhaka (UTC+6) to UTC
+                    // Create Carbon instance in UTC, then subtract 6 hours
+                    // This ensures the time is correctly converted
+                    $carbon = \Carbon\Carbon::create(
+                        (int)$year,
+                        (int)$month,
+                        (int)$day,
+                        (int)$hour,
+                        (int)$minute,
+                        (int)$second,
+                        'UTC'
+                    );
+                    
+                    // Subtract 6 hours to convert from Asia/Dhaka to UTC
+                    // Asia/Dhaka is UTC+6, so local time - 6 hours = UTC time
                     $carbon->subHours(6);
                     
-                    // Format for database storage
+                    // Format as UTC datetime string for database storage
                     $scheduledAt = $carbon->format('Y-m-d H:i:s');
+                    
+                    // Log for debugging
+                    \Log::info('Booking scheduled_at conversion', [
+                        'original_input' => $datetimeStr,
+                        'parsed_datetime' => $datetimeString,
+                        'asia_dhaka_time' => sprintf('%04d-%02d-%02d %02d:%02d:%02d Asia/Dhaka', 
+                            (int)$year, (int)$month, (int)$day, 
+                            (int)$hour, (int)$minute, (int)$second),
+                        'utc_stored' => $scheduledAt,
+                        'utc_carbon_format' => $carbon->format('Y-m-d H:i:s T'),
+                        'payment_method' => $paymentMethod ?? 'unknown'
+                    ]);
                     
                 } catch (\Exception $e) {
                     // If parsing fails, log and use as-is (Laravel will try to parse it)
