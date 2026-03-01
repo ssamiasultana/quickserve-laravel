@@ -150,6 +150,7 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/payments/submit-commission', [PaymentController::class, 'submitCommissionPayment']);
     Route::post('/payments/sslcommerz/initiate', [PaymentController::class, 'initiateSslCommerzPayment']);
     Route::get('/payments/worker/transactions', [PaymentController::class, 'getWorkerTransactions']);
+    Route::get('/payments/worker/pending-payments', [PaymentController::class, 'getWorkerPendingPayments']);
 });
 
 // Payment routes for customers (requires authentication)
@@ -163,6 +164,7 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/payments/commission-payment/{transaction}/process', [PaymentController::class, 'processCommissionPayment']);
     Route::get('/payments/pending-online-payments', [PaymentController::class, 'getPendingOnlinePayments']);
     Route::post('/payments/send-online-payment', [PaymentController::class, 'sendOnlinePayment']);
+    Route::post('/payments/admin-to-worker/initiate', [PaymentController::class, 'initiateAdminToWorkerPayment']);
     Route::get('/payments/all-transactions', [PaymentController::class, 'getAllTransactions']);
 });
 

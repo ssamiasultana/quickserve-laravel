@@ -33,6 +33,7 @@ class BookingResource extends JsonResource
             'shift_charge_percent' => (float) $this->shift_charge_percent,
             'total_amount' => (float) $this->total_amount,
             'status' => $this->status,
+            'payment_method' => $this->payment_method,
             'scheduled_at' => optional($this->scheduled_at)->toIso8601String(),
             'created_at' => optional($this->created_at)->toIso8601String(),
             'updated_at' => optional($this->updated_at)->toIso8601String(),

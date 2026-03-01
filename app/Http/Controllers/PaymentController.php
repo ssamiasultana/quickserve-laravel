@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Validator;
 class PaymentController extends Controller
 {
     /**
-     * Worker submits 30% commission payment to admin through online payment
+     * Worker submits 20% commission payment to admin (for cash payments)
      */
     public function submitCommissionPayment(Request $request): JsonResponse
     {
@@ -82,8 +82,16 @@ class PaymentController extends Controller
                 ], 400);
             }
 
-            // Calculate 30% commission
-            $commissionAmount = $booking->total_amount * 0.30;
+            // Only allow commission submission for cash payments
+            if ($booking->payment_method !== 'cash') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Commission can only be submitted for cash payments. Online payments are handled by admin.'
+                ], 400);
+            }
+
+            // Calculate 20% commission
+            $commissionAmount = $booking->total_amount * 0.20;
 
             // Check if commission already submitted
             $existingTransaction = PaymentTransaction::where('booking_id', $booking->id)
@@ -195,8 +203,16 @@ class PaymentController extends Controller
                 ], 400);
             }
 
-            // Calculate 30% commission
-            $commissionAmount = $booking->total_amount * 0.30;
+            // Only allow commission submission for cash payments
+            if ($booking->payment_method !== 'cash') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Commission can only be submitted for cash payments. Online payments are handled by admin.'
+                ], 400);
+            }
+
+            // Calculate 20% commission
+            $commissionAmount = $booking->total_amount * 0.20;
 
             // Check if commission already submitted
             $existingTransaction = PaymentTransaction::where('booking_id', $booking->id)
@@ -374,9 +390,9 @@ class PaymentController extends Controller
                 ], 404);
             }
 
-            // Check if booking already has online payment transaction
+            // Check if booking already has customer payment transaction
             $existingTransaction = PaymentTransaction::where('booking_id', $booking->id)
-                ->where('transaction_type', 'online_payment')
+                ->where('transaction_type', 'customer_payment')
                 ->whereIn('status', ['pending', 'completed'])
                 ->first();
 
@@ -390,14 +406,14 @@ class PaymentController extends Controller
             // Generate unique transaction ID
             $tranId = 'CUST' . date('YmdHis') . $booking->id . rand(1000, 9999);
 
-            // Create pending transaction
+            // Create pending transaction - customer payment goes to admin
             $transaction = PaymentTransaction::create([
                 'booking_id' => $booking->id,
                 'worker_id' => $booking->worker_id,
-                'transaction_type' => 'online_payment',
+                'transaction_type' => 'customer_payment',
                 'amount' => $booking->total_amount,
                 'status' => 'pending',
-                'notes' => 'SSL Commerz Payment - Customer Booking - Transaction ID: ' . $tranId,
+                'notes' => 'SSL Commerz Payment - Customer Booking - Payment to Admin - Transaction ID: ' . $tranId,
             ]);
 
             // Prepare SSL Commerz payment data
@@ -540,13 +556,16 @@ class PaymentController extends Controller
             if ($validation) {
                 DB::beginTransaction();
 
-                // Check if this is a customer payment or worker commission payment
+                // Check payment type
                 $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
-                    || $transaction->transaction_type === 'online_payment';
+                    || $transaction->transaction_type === 'customer_payment';
+                $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment'
+                    || ($transaction->transaction_type === 'online_payment' && strpos($transaction->notes, 'Admin to Worker') !== false);
 
                 // Update transaction status
                 $transaction->update([
                     'status' => 'completed',
+                    'processed_at' => now(),
                     'notes' => $transaction->notes . "\nSSL Commerz Val ID: " . ($request->input('val_id') ?? 'N/A') . "\nVerified: " . now(),
                 ]);
 
@@ -578,6 +597,8 @@ class PaymentController extends Controller
                 // Redirect based on payment type
                 if ($isCustomerPayment) {
                     $redirectUrl = $frontendUrl . '/customer/my-booking?status=success&transaction_id=' . $transaction->id;
+                } elseif ($isAdminToWorkerPayment) {
+                    $redirectUrl = $frontendUrl . '/payments?status=success&transaction_id=' . $transaction->id;
                 } else {
                     $redirectUrl = $frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $transaction->id;
                 }
@@ -591,7 +612,9 @@ class PaymentController extends Controller
             } else {
                 // Validation failed
                 $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
-                    || ($transaction && $transaction->transaction_type === 'online_payment');
+                    || ($transaction && $transaction->transaction_type === 'customer_payment');
+                $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment'
+                    || ($transaction && $transaction->transaction_type === 'online_payment' && strpos($transaction->notes, 'Admin to Worker') !== false);
                     
                 $transaction->update([
                     'status' => 'rejected',
@@ -599,9 +622,13 @@ class PaymentController extends Controller
                 ]);
 
                 $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-                $redirectUrl = $isCustomerPayment
-                    ? $frontendUrl . '/customer/my-booking?status=error&message=' . urlencode('Payment verification failed')
-                    : $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment verification failed');
+                if ($isCustomerPayment) {
+                    $redirectUrl = $frontendUrl . '/customer/my-booking?status=error&message=' . urlencode('Payment verification failed');
+                } elseif ($isAdminToWorkerPayment) {
+                    $redirectUrl = $frontendUrl . '/payments?status=error&message=' . urlencode('Payment verification failed');
+                } else {
+                    $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error&message=' . urlencode('Payment verification failed');
+                }
                 Log::warning('Payment validation failed, redirecting to frontend', ['redirect_url' => $redirectUrl]);
                 return $this->htmlRedirect($redirectUrl);
             }
@@ -636,7 +663,9 @@ class PaymentController extends Controller
                 ->first();
 
             $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
-                || ($transaction && $transaction->transaction_type === 'online_payment');
+                || ($transaction && $transaction->transaction_type === 'customer_payment');
+            $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment'
+                || ($transaction && $transaction->transaction_type === 'online_payment' && strpos($transaction->notes, 'Admin to Worker') !== false);
 
             if ($transaction) {
                 $transaction->update([
@@ -646,18 +675,27 @@ class PaymentController extends Controller
             }
 
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            $redirectUrl = $isCustomerPayment
-                ? $frontendUrl . '/customer/my-booking?status=failed&message=' . urlencode('Payment failed')
-                : $frontendUrl . '/worker/submit-payment?status=failed&message=' . urlencode('Payment failed');
+            if ($isCustomerPayment) {
+                $redirectUrl = $frontendUrl . '/customer/my-booking?status=failed&message=' . urlencode('Payment failed');
+            } elseif ($isAdminToWorkerPayment) {
+                $redirectUrl = $frontendUrl . '/payments?status=failed&message=' . urlencode('Payment failed');
+            } else {
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=failed&message=' . urlencode('Payment failed');
+            }
             return $this->htmlRedirect($redirectUrl);
 
         } catch (\Throwable $e) {
             Log::error('SSL Commerz fail callback error: ' . $e->getMessage());
             $isCustomerPayment = $request->input('value_d') === 'customer_payment';
+            $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment';
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            $redirectUrl = $isCustomerPayment
-                ? $frontendUrl . '/customer/my-booking?status=error'
-                : $frontendUrl . '/worker/submit-payment?status=error';
+            if ($isCustomerPayment) {
+                $redirectUrl = $frontendUrl . '/customer/my-booking?status=error';
+            } elseif ($isAdminToWorkerPayment) {
+                $redirectUrl = $frontendUrl . '/payments?status=error';
+            } else {
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error';
+            }
             return $this->htmlRedirect($redirectUrl);
         }
     }
@@ -676,7 +714,9 @@ class PaymentController extends Controller
                 ->first();
 
             $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
-                || ($transaction && $transaction->transaction_type === 'online_payment');
+                || ($transaction && $transaction->transaction_type === 'customer_payment');
+            $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment'
+                || ($transaction && $transaction->transaction_type === 'online_payment' && strpos($transaction->notes, 'Admin to Worker') !== false);
 
             if ($transaction) {
                 $transaction->update([
@@ -686,18 +726,27 @@ class PaymentController extends Controller
             }
 
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            $redirectUrl = $isCustomerPayment
-                ? $frontendUrl . '/customer/my-booking?status=cancelled&message=' . urlencode('Payment cancelled')
-                : $frontendUrl . '/worker/submit-payment?status=cancelled&message=' . urlencode('Payment cancelled');
+            if ($isCustomerPayment) {
+                $redirectUrl = $frontendUrl . '/customer/my-booking?status=cancelled&message=' . urlencode('Payment cancelled');
+            } elseif ($isAdminToWorkerPayment) {
+                $redirectUrl = $frontendUrl . '/payments?status=cancelled&message=' . urlencode('Payment cancelled');
+            } else {
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=cancelled&message=' . urlencode('Payment cancelled');
+            }
             return $this->htmlRedirect($redirectUrl);
 
         } catch (\Throwable $e) {
             Log::error('SSL Commerz cancel callback error: ' . $e->getMessage());
             $isCustomerPayment = $request->input('value_d') === 'customer_payment';
+            $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment';
             $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
-            $redirectUrl = $isCustomerPayment
-                ? $frontendUrl . '/customer/my-booking?status=error'
-                : $frontendUrl . '/worker/submit-payment?status=error';
+            if ($isCustomerPayment) {
+                $redirectUrl = $frontendUrl . '/customer/my-booking?status=error';
+            } elseif ($isAdminToWorkerPayment) {
+                $redirectUrl = $frontendUrl . '/payments?status=error';
+            } else {
+                $redirectUrl = $frontendUrl . '/worker/submit-payment?status=error';
+            }
             return $this->htmlRedirect($redirectUrl);
         }
     }
@@ -741,6 +790,18 @@ class PaymentController extends Controller
                     'status' => 'completed',
                     'notes' => $transaction->notes . "\nIPN Verified - Val ID: " . ($request->input('val_id') ?? 'N/A') . "\nVerified at: " . now(),
                 ]);
+
+                // Update booking status to 'paid' if it's a customer payment
+                if ($transaction->transaction_type === 'customer_payment' && $transaction->booking_id) {
+                    DB::table('booking')
+                        ->where('id', $transaction->booking_id)
+                        ->where('status', '!=', 'paid')
+                        ->update([
+                            'status' => 'paid',
+                            'payment_method' => 'online',
+                            'updated_at' => now(),
+                        ]);
+                }
 
                 DB::commit();
 
@@ -828,7 +889,92 @@ class PaymentController extends Controller
     }
 
     /**
-     * Get worker's pending commission payments (for admin)
+     * Get worker's pending payments from admin (online bookings where customer paid but admin hasn't sent money yet)
+     */
+    public function getWorkerPendingPayments(Request $request): JsonResponse
+    {
+        try {
+            $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Get worker - try by user_id first, then by email
+            $worker = Worker::where('user_id', $user->id)->first();
+            
+            if (!$worker) {
+                $worker = Worker::where('email', $user->email)->first();
+                if ($worker && !$worker->user_id) {
+                    $worker->user_id = $user->id;
+                    $worker->save();
+                }
+            }
+            
+            if (!$worker) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Worker profile not found. Please complete your worker profile first.'
+                ], 404);
+            }
+
+            // Get bookings where:
+            // 1. Customer has paid (status=paid, payment_method=online)
+            // 2. Has customer_payment transaction completed
+            // 3. But no completed online_payment transaction to worker yet
+            $bookings = Booking::where('worker_id', $worker->id)
+                ->where('status', 'paid')
+                ->where('payment_method', 'online')
+                ->whereHas('paymentTransactions', function ($query) {
+                    // Must have completed customer payment
+                    $query->where('transaction_type', 'customer_payment')
+                        ->where('status', 'completed');
+                })
+                ->whereDoesntHave('paymentTransactions', function ($query) {
+                    // But no completed worker payment yet
+                    $query->where('transaction_type', 'online_payment')
+                        ->where('status', 'completed');
+                })
+                ->with(['serviceSubcategory', 'customer', 'paymentTransactions' => function ($query) {
+                    $query->where('transaction_type', 'customer_payment')
+                        ->where('status', 'completed')
+                        ->orderByDesc('created_at')
+                        ->limit(1);
+                }])
+                ->orderByDesc('created_at')
+                ->get();
+
+            // Calculate total pending amount
+            $totalPendingAmount = $bookings->sum('total_amount');
+            $workerPendingAmount = $totalPendingAmount * 0.80; // Worker gets 80%
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'bookings' => $bookings,
+                    'total_pending_amount' => $totalPendingAmount,
+                    'worker_pending_amount' => $workerPendingAmount,
+                    'commission_amount' => $totalPendingAmount * 0.20,
+                    'count' => $bookings->count(),
+                ]
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('Get worker pending payments failed: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve pending payments',
+                'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get all commission payments (for admin) - shows all commission payments regardless of status
      */
     public function getPendingCommissionPayments(): JsonResponse
     {
@@ -842,23 +988,29 @@ class PaymentController extends Controller
                 ], 403);
             }
 
+            // Get all commission payments (pending, approved, completed, rejected)
             $transactions = PaymentTransaction::where('transaction_type', 'commission_payment')
-                ->where('status', 'pending')
-                ->with(['booking.serviceSubcategory', 'booking.customer', 'worker'])
+                ->with(['booking.serviceSubcategory', 'booking.customer', 'worker', 'processedBy'])
                 ->orderByDesc('created_at')
                 ->get();
 
+            // Separate pending and all transactions
+            $pendingTransactions = $transactions->where('status', 'pending')->values();
+            $allTransactions = $transactions->values();
+
             return response()->json([
                 'success' => true,
-                'data' => $transactions
+                'data' => $allTransactions,
+                'pending_count' => $pendingTransactions->count(),
+                'total_count' => $allTransactions->count(),
             ]);
 
         } catch (\Throwable $e) {
-            Log::error('Get pending commission payments failed: ' . $e->getMessage());
+            Log::error('Get commission payments failed: ' . $e->getMessage());
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve pending commission payments',
+                'message' => 'Failed to retrieve commission payments',
                 'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
             ], 500);
         }
@@ -966,10 +1118,17 @@ class PaymentController extends Controller
                 ], 403);
             }
 
-            // Get paid bookings with online payment method that don't have completed payment transaction
+            // Get paid bookings with online payment method where customer has paid (customer_payment completed)
+            // but admin hasn't sent payment to worker yet (no completed online_payment transaction to worker)
             $bookings = Booking::where('status', 'paid')
                 ->where('payment_method', 'online')
+                ->whereHas('paymentTransactions', function ($query) {
+                    // Must have completed customer payment
+                    $query->where('transaction_type', 'customer_payment')
+                        ->where('status', 'completed');
+                })
                 ->whereDoesntHave('paymentTransactions', function ($query) {
+                    // But no completed worker payment yet
                     $query->where('transaction_type', 'online_payment')
                         ->where('status', 'completed');
                 })
@@ -994,9 +1153,9 @@ class PaymentController extends Controller
     }
 
     /**
-     * Admin sends online payment to worker
+     * Admin initiates SSL Commerz payment to worker
      */
-    public function sendOnlinePayment(Request $request): JsonResponse
+    public function initiateAdminToWorkerPayment(Request $request): JsonResponse
     {
         try {
             $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
@@ -1030,6 +1189,14 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            // Check if worker is assigned to the booking
+            if (!$booking->worker_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot send payment: No worker assigned to this booking. Please assign a worker first.'
+                ], 400);
+            }
+
             // Check if already sent
             $existingTransaction = PaymentTransaction::where('booking_id', $booking->id)
                 ->where('transaction_type', 'online_payment')
@@ -1043,43 +1210,164 @@ class PaymentController extends Controller
                 ], 400);
             }
 
-            DB::beginTransaction();
+            // Check if payment already initiated
+            $pendingTransaction = PaymentTransaction::where('booking_id', $booking->id)
+                ->where('transaction_type', 'online_payment')
+                ->where('status', 'pending')
+                ->first();
 
-            // Create payment transaction and mark as completed immediately
-            $transaction = PaymentTransaction::create([
+            if ($pendingTransaction) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment already initiated for this booking'
+                ], 400);
+            }
+
+            // Get worker
+            $worker = Worker::find($booking->worker_id);
+            if (!$worker) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Worker not found'
+                ], 404);
+            }
+
+            // Calculate 20% commission (admin keeps this)
+            $commissionAmount = $booking->total_amount * 0.20;
+            // Worker receives 80% of the payment
+            $workerAmount = $booking->total_amount * 0.80;
+
+            // Create commission transaction (20% - admin keeps this)
+            $commissionTransaction = PaymentTransaction::create([
                 'booking_id' => $booking->id,
                 'worker_id' => $booking->worker_id,
-                'transaction_type' => 'online_payment',
-                'amount' => $booking->total_amount,
+                'transaction_type' => 'commission_payment',
+                'amount' => $commissionAmount,
                 'status' => 'completed',
-                'notes' => $request->notes,
+                'notes' => 'Commission deducted from online payment' . ($request->notes ? "\n" . $request->notes : ''),
                 'processed_by' => $user->id,
                 'processed_at' => now(),
             ]);
 
-            DB::commit();
+            // Generate unique transaction ID
+            $tranId = 'ADMIN2WRK' . date('YmdHis') . $booking->id . rand(1000, 9999);
 
-            $transaction->load(['booking.serviceSubcategory', 'booking.customer', 'worker', 'processedBy']);
+            // Create pending payment transaction for worker (80% - will be sent via SSL Commerz)
+            $transaction = PaymentTransaction::create([
+                'booking_id' => $booking->id,
+                'worker_id' => $booking->worker_id,
+                'transaction_type' => 'online_payment',
+                'amount' => $workerAmount,
+                'status' => 'pending',
+                'notes' => 'SSL Commerz Payment - Admin to Worker - Transaction ID: ' . $tranId . ($request->notes ? "\nNotes: " . $request->notes : ''),
+                'processed_by' => $user->id,
+            ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Online payment sent to worker successfully',
-                'data' => $transaction
-            ], 201);
+            // Prepare SSL Commerz payment data
+            $post_data = [];
+            $post_data['total_amount'] = number_format($workerAmount, 2, '.', '');
+            $post_data['currency'] = "BDT";
+            $post_data['tran_id'] = $tranId;
+
+            // WORKER INFORMATION (recipient)
+            $post_data['cus_name'] = $worker->name ?? 'Worker';
+            $post_data['cus_email'] = $worker->email ?? '';
+            $post_data['cus_add1'] = $worker->address ?? 'N/A';
+            $post_data['cus_add2'] = "";
+            $post_data['cus_city'] = "Dhaka";
+            $post_data['cus_state'] = "";
+            $post_data['cus_postcode'] = "";
+            $post_data['cus_country'] = "Bangladesh";
+            $post_data['cus_phone'] = $worker->phone ?? '';
+            $post_data['cus_fax'] = "";
+
+            // SHIPMENT INFORMATION
+            $post_data['shipping_method'] = "NO";
+            $post_data['product_name'] = "Worker Payment - Booking #" . $booking->id;
+            $post_data['product_category'] = "Worker Payment";
+            $post_data['product_profile'] = "general";
+
+            // OPTIONAL PARAMETERS
+            $post_data['value_a'] = $booking->id; // Booking ID
+            $post_data['value_b'] = $worker->id; // Worker ID
+            $post_data['value_c'] = $transaction->id; // Payment Transaction ID
+            $post_data['value_d'] = "admin_to_worker_payment"; // Payment type identifier
+
+            // Verify SSL Commerz config
+            $sslConfig = config('sslcommerz');
+            if (empty($sslConfig['apiCredentials']['store_id']) || empty($sslConfig['apiCredentials']['store_password'])) {
+                Log::error('SSL Commerz credentials missing');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'SSL Commerz configuration error. Please check your .env file.',
+                ], 500);
+            }
+
+            // Use official SSL Commerz library
+            $sslc = new SslCommerzNotification();
+            
+            $appUrl = config('app.url', env('APP_URL', 'http://localhost:8000'));
+            $post_data['success_url'] = rtrim($appUrl, '/') . '/api/success';
+            $post_data['fail_url'] = rtrim($appUrl, '/') . '/api/fail';
+            $post_data['cancel_url'] = rtrim($appUrl, '/') . '/api/cancel';
+            $post_data['ipn_url'] = rtrim($appUrl, '/') . '/api/ipn';
+            
+            $payment_options = $sslc->makePayment($post_data, 'checkout', 'json');
+            $payment_data = json_decode($payment_options, true);
+
+            if (is_array($payment_data) && isset($payment_data['status']) && $payment_data['status'] === 'success' && isset($payment_data['data'])) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payment session created successfully',
+                    'payment_url' => $payment_data['data'],
+                    'transaction_id' => $transaction->id,
+                    'tran_id' => $tranId,
+                    'worker_amount' => $workerAmount,
+                    'commission_amount' => $commissionAmount,
+                ]);
+            } else {
+                $transaction->delete();
+                $commissionTransaction->delete();
+                
+                $errorMessage = 'Failed to initiate payment';
+                if (is_array($payment_data) && isset($payment_data['message'])) {
+                    $errorMessage = $payment_data['message'];
+                }
+
+                Log::error('SSL Commerz admin-to-worker payment initiation failed', [
+                    'payment_response' => $payment_options,
+                    'decoded_response' => $payment_data,
+                    'booking_id' => $booking->id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                ], 400);
+            }
 
         } catch (\Throwable $e) {
-            DB::rollBack();
-            Log::error('Send online payment failed: ' . $e->getMessage(), [
+            Log::error('Initiate admin-to-worker payment failed: ' . $e->getMessage(), [
                 'data' => $request->all(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send online payment',
+                'message' => 'Failed to initiate payment',
                 'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong',
             ], 500);
         }
+    }
+
+    /**
+     * Admin sends online payment to worker (deprecated - use initiateAdminToWorkerPayment)
+     * @deprecated Use initiateAdminToWorkerPayment instead
+     */
+    public function sendOnlinePayment(Request $request): JsonResponse
+    {
+        // Redirect to new SSL Commerz flow
+        return $this->initiateAdminToWorkerPayment($request);
     }
 
     /**
