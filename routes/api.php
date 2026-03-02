@@ -50,34 +50,29 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/worker/profile', [WorkerController::class, 'getProfile']);
     Route::patch('/worker/profile', [WorkerController::class, 'updateProfile']);
     
-    // Worker CRUD routes
-   
-    Route::post('/workers', [WorkerController::class, 'createWorker']);
-    Route::get('/workers/paginated', [WorkerController::class, 'getPaginated']);
-    
-    Route::patch('/workers/{id}', [WorkerController::class, 'updateWorker']);
-    Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
-    
-    
+    // Worker CRUD routes (Admin & Moderator)
+    Route::middleware(['role:Admin,Moderator'])->group(function () {
+        Route::post('/workers', [WorkerController::class, 'createWorker']);
+        Route::get('/workers/paginated', [WorkerController::class, 'getPaginated']);
+        Route::patch('/workers/{id}', [WorkerController::class, 'updateWorker']);
+        Route::delete('/workers/{id}', [WorkerController::class, 'deleteWorker']);
+        Route::post('/workers/{id}/verify-nid', [WorkerController::class, 'verifyNID']);
+        Route::post('/workers/check-nid', [WorkerController::class, 'checkNIDAvailability']);
+        Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
+    });
 
-    Route::post('/workers/{id}/verify-nid', [WorkerController::class, 'verifyNID']);
-    
-    // Check NID availability
-    Route::post('/workers/check-nid', [WorkerController::class, 'checkNIDAvailability']);
-
-    // Service routes
-    Route::post('/services', [ServiceController::class, 'createServices']);
+    // Service routes (Admin only)
+    Route::middleware(['role:Admin'])->group(function () {
+        Route::post('/services', [ServiceController::class, 'createServices']);
+        Route::put('/services/{id}', [ServiceController::class, 'updateServices']);
+        Route::delete('/services/{id}', [ServiceController::class, 'deleteServices']);
+    });
     Route::get('/getServices', [ServiceController::class, 'getServices']);
-    Route::put('/services/{id}', [ServiceController::class, 'updateServices']);
-    Route::delete('/services/{id}', [ServiceController::class, 'deleteServices']);
-    
-    // Bulk workers
-    Route::post('/workers/bulk', [WorkerController::class, 'createBulkWorkers']);
 
     // Get bookings for the authenticated worker
     Route::get('/booking/worker/jobs', [BookingController::class, 'getBookingsByWorker']);
     
-    // Update booking status (confirm/cancel) - for workers and moderators
+    // Update booking status (confirm/cancel) - for workers, moderators, and admins
     Route::patch('/booking/{booking}/status', [BookingController::class, 'updateBookingStatus']);
 
     // Review routes (requires authentication)
@@ -106,11 +101,11 @@ Route::get('/bookings/{bookingId}/review', [ReviewController::class, 'getBooking
 Route::get('/customers', [CustomerController::class, 'getAllCustomers']);
 Route::get('/customers/paginated', [CustomerController::class, 'getPaginated']);
 
-Route::middleware(['jwt.auth'])->group(function () {
+Route::middleware(['jwt.auth', 'role:Admin'])->group(function () {
     Route::patch('/customers/{id}', [CustomerController::class, 'updateCustomer']);
     Route::delete('/customers/{id}', [CustomerController::class, 'deleteCustomer']);
     
-    // Moderator routes
+    // Moderator management routes (Admin only)
     Route::patch('/moderators/{id}', [ModeratorController::class, 'updateModerator']);
     Route::delete('/moderators/{id}', [ModeratorController::class, 'deleteModerator']);
 });
@@ -158,8 +153,8 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/payments/sslcommerz/customer/initiate', [PaymentController::class, 'initiateCustomerSslCommerzPayment']);
 });
 
-// Payment routes for admin (requires authentication)
-Route::middleware(['jwt.auth'])->group(function () {
+// Payment routes for admin (Admin only)
+Route::middleware(['jwt.auth', 'role:Admin'])->group(function () {
     Route::get('/payments/pending-commission-payments', [PaymentController::class, 'getPendingCommissionPayments']);
     Route::post('/payments/commission-payment/{transaction}/process', [PaymentController::class, 'processCommissionPayment']);
     Route::get('/payments/pending-online-payments', [PaymentController::class, 'getPendingOnlinePayments']);
