@@ -9,6 +9,7 @@ use App\Models\Booking;
 use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
@@ -325,12 +326,20 @@ class BookingController extends Controller
                 }
             }
 
-            // Update the booking status
-            $booking->status = $newStatus;
-            $booking->save();
+            // Update the booking status using raw DB query to prevent
+            // datetime casting issues with scheduled_at (same approach as sslCommerzSuccess)
+            $updateData = ['status' => $newStatus, 'updated_at' => now()];
+            if ($booking->isDirty('worker_id')) {
+                $updateData['worker_id'] = $booking->worker_id;
+            }
+            
+            DB::table('booking')
+                ->where('id', $booking->id)
+                ->update($updateData);
 
-            // Reload relationships
-            $booking->load(['customer', 'service', 'serviceSubcategory', 'worker']);
+            // Refresh the model from DB and load relationships
+            $booking = Booking::with(['customer', 'service', 'serviceSubcategory', 'worker'])
+                ->find($booking->id);
 
             return response()->json([
                 'success' => true,
