@@ -174,4 +174,38 @@ class ReviewController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get all reviews (for dashboard/public display).
+     * Returns latest reviews with customer, worker, and booking information.
+     */
+    public function getAllReviews(Request $request): JsonResponse
+    {
+        try {
+            $limit = $request->input('limit', 10); // Default to 10, can be customized
+            
+            $reviews = Review::with([
+                'customer', 
+                'worker', 
+                'booking.serviceSubcategory',
+                'booking.service'
+            ])
+                ->orderBy('created_at', 'desc')
+                ->limit($limit)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $reviews,
+                'count' => $reviews->count(),
+                'message' => 'Reviews retrieved successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve reviews: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

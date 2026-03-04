@@ -94,6 +94,7 @@ Route::get('/workers/service/{serviceId}', [WorkerController::class, 'getWorkers
 Route::get('/workers/{id}', [WorkerController::class, 'getSingleWorker'])->whereNumber('id');
 
 // Review routes (public get)
+Route::get('/reviews', [ReviewController::class, 'getAllReviews']);
 Route::get('/workers/{workerId}/reviews', [ReviewController::class, 'getWorkerReviews']);
 Route::get('/bookings/{bookingId}/review', [ReviewController::class, 'getBookingReview']);
 
