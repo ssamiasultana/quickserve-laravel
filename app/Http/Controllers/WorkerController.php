@@ -143,8 +143,10 @@ class WorkerController extends Controller
 
     public function getAllWorkers(): JsonResponse
     {
-        // $workers = Worker::all();
-        $workers = Worker::with('services')->get();
+        // Only show workers whose NID has been verified by admin
+        $workers = Worker::with('services')
+            ->where('nid_verified', true)
+            ->get();
 
         return response()->json([
             'success' => true,
@@ -565,8 +567,9 @@ public function searchWorkers(Request $request)
             $query->where('shift', $request->shift);
         }
 
-        // Only show active workers
+        // Only show active workers whose NID has been verified by admin
         $query->where('is_active', true);
+        $query->where('nid_verified', true);
         
         $workers = $query->get();
         
@@ -589,9 +592,12 @@ public function searchWorkers(Request $request)
 
     public function getWorkersByService($serviceId): JsonResponse
     {
+        // Only show workers whose NID has been verified by admin
         $workers = Worker::whereHas('services', function($query) use ($serviceId) {
             $query->where('service_id', $serviceId);
-        })->with('services')->get();
+        })->with('services')
+          ->where('nid_verified', true)
+          ->get();
 
         return response()->json([
             'success' => true,
