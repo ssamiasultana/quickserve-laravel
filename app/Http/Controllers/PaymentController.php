@@ -355,9 +355,12 @@ class PaymentController extends Controller
 
     /**
      * Initiate SSL Commerz payment for customer booking
+     * Supports both single booking_id and multiple booking_ids
      */
     public function initiateCustomerSslCommerzPayment(Request $request): JsonResponse
     {
+        $transactions = []; // Initialize to avoid undefined variable errors
+        
         try {
             $user = \Tymon\JWTAuth\Facades\JWTAuth::parseToken()->authenticate();
             
@@ -368,8 +371,11 @@ class PaymentController extends Controller
                 ], 401);
             }
 
+            // Accept either booking_id (single) or booking_ids (array)
             $validator = Validator::make($request->all(), [
-                'booking_id' => 'required|exists:booking,id',
+                'booking_id' => 'required_without:booking_ids|exists:booking,id',
+                'booking_ids' => 'required_without:booking_id|array',
+                'booking_ids.*' => 'exists:booking,id',
             ]);
 
             if ($validator->fails()) {
@@ -380,70 +386,102 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Get booking
-            $booking = Booking::where('id', $request->booking_id)->first();
+            // Get booking(s) - handle both single and multiple
+            $bookingIds = $request->has('booking_ids') 
+                ? $request->booking_ids 
+                : [$request->booking_id];
+            
+            $bookings = Booking::whereIn('id', $bookingIds)->get();
 
-            if (!$booking) {
+            if ($bookings->isEmpty()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Booking not found'
+                    'message' => 'Booking(s) not found'
                 ], 404);
             }
 
-            // Check if booking already has customer payment transaction
-            $existingTransaction = PaymentTransaction::where('booking_id', $booking->id)
-                ->where('transaction_type', 'customer_payment')
-                ->whereIn('status', ['pending', 'completed'])
-                ->first();
+            // Verify all bookings belong to the same customer
+            $customerId = $bookings->first()->customer_id;
+            $allSameCustomer = $bookings->every(function ($booking) use ($customerId) {
+                return $booking->customer_id == $customerId;
+            });
 
-            if ($existingTransaction) {
+            if (!$allSameCustomer) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment already initiated for this booking'
+                    'message' => 'All bookings must belong to the same customer'
                 ], 400);
             }
 
-            // Generate unique transaction ID
-            $tranId = 'CUST' . date('YmdHis') . $booking->id . rand(1000, 9999);
+            // Check if any booking already has customer payment transaction
+            $existingTransactions = PaymentTransaction::whereIn('booking_id', $bookingIds)
+                ->where('transaction_type', 'customer_payment')
+                ->whereIn('status', ['pending', 'completed'])
+                ->get();
 
-            // Create pending transaction - customer payment goes to admin
-            $transaction = PaymentTransaction::create([
-                'booking_id' => $booking->id,
-                'worker_id' => $booking->worker_id,
-                'transaction_type' => 'customer_payment',
-                'amount' => $booking->total_amount,
-                'status' => 'pending',
-                'notes' => 'SSL Commerz Payment - Customer Booking - Payment to Admin - Transaction ID: ' . $tranId,
-            ]);
+            if ($existingTransactions->isNotEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment already initiated for one or more bookings'
+                ], 400);
+            }
+
+            // Calculate total amount from all bookings
+            $totalAmount = $bookings->sum('total_amount');
+
+            // Use first booking for customer info (they should all be the same)
+            $primaryBooking = $bookings->first();
+
+            // Generate unique transaction ID
+            $tranId = 'CUST' . date('YmdHis') . implode('_', $bookingIds) . rand(1000, 9999);
+
+            // Create pending transactions for all bookings - customer payment goes to admin
+            $transactions = [];
+            foreach ($bookings as $booking) {
+                $transactions[] = PaymentTransaction::create([
+                    'booking_id' => $booking->id,
+                    'worker_id' => $booking->worker_id,
+                    'transaction_type' => 'customer_payment',
+                    'amount' => $booking->total_amount,
+                    'status' => 'pending',
+                    'notes' => 'SSL Commerz Payment - Customer Booking - Payment to Admin - Transaction ID: ' . $tranId,
+                ]);
+            }
+
+            // Use the first transaction ID for SSL Commerz value_c
+            $primaryTransaction = $transactions[0];
 
             // Prepare SSL Commerz payment data
             $post_data = [];
-            $post_data['total_amount'] = number_format($booking->total_amount, 2, '.', '');
+            $post_data['total_amount'] = number_format($totalAmount, 2, '.', '');
             $post_data['currency'] = "BDT";
             $post_data['tran_id'] = $tranId;
 
             // CUSTOMER INFORMATION
-            $post_data['cus_name'] = $booking->customer_name ?? $user->name ?? 'Customer';
-            $post_data['cus_email'] = $booking->customer_email ?? $user->email ?? '';
-            $post_data['cus_add1'] = $booking->service_address ?? 'N/A';
+            $post_data['cus_name'] = $primaryBooking->customer_name ?? $user->name ?? 'Customer';
+            $post_data['cus_email'] = $primaryBooking->customer_email ?? $user->email ?? '';
+            $post_data['cus_add1'] = $primaryBooking->service_address ?? 'N/A';
             $post_data['cus_add2'] = "";
             $post_data['cus_city'] = "Dhaka";
             $post_data['cus_state'] = "";
             $post_data['cus_postcode'] = "";
             $post_data['cus_country'] = "Bangladesh";
-            $post_data['cus_phone'] = $booking->customer_phone ?? '';
+            $post_data['cus_phone'] = $primaryBooking->customer_phone ?? '';
             $post_data['cus_fax'] = "";
 
             // SHIPMENT INFORMATION
             $post_data['shipping_method'] = "NO";
-            $post_data['product_name'] = "Service Booking - Booking #" . $booking->id;
+            $bookingCount = $bookings->count();
+            $post_data['product_name'] = $bookingCount > 1 
+                ? "Service Booking - {$bookingCount} Bookings" 
+                : "Service Booking - Booking #" . $primaryBooking->id;
             $post_data['product_category'] = "Service Booking";
             $post_data['product_profile'] = "general";
 
             // OPTIONAL PARAMETERS
-            $post_data['value_a'] = $booking->id; // Booking ID
+            $post_data['value_a'] = implode(',', $bookingIds); // Booking IDs (comma-separated)
             $post_data['value_b'] = $user->id; // Customer User ID
-            $post_data['value_c'] = $transaction->id; // Payment Transaction ID
+            $post_data['value_c'] = $primaryTransaction->id; // Primary Payment Transaction ID
             $post_data['value_d'] = "customer_payment"; // Payment type identifier
 
             // Verify SSL Commerz config
@@ -473,15 +511,24 @@ class PaymentController extends Controller
             $payment_data = json_decode($payment_options, true);
 
             if (is_array($payment_data) && isset($payment_data['status']) && $payment_data['status'] === 'success' && isset($payment_data['data'])) {
+                // Convert transactions array to collection for pluck
+                $transactionIds = collect($transactions)->pluck('id')->toArray();
+                
                 return response()->json([
                     'success' => true,
                     'message' => 'Payment session created successfully',
                     'payment_url' => $payment_data['data'],
-                    'transaction_id' => $transaction->id,
+                    'transaction_id' => $primaryTransaction->id,
+                    'transaction_ids' => $transactionIds,
+                    'booking_ids' => $bookingIds,
+                    'total_amount' => $totalAmount,
                     'tran_id' => $tranId,
                 ]);
             } else {
-                $transaction->delete();
+                // Delete all transactions if payment initiation fails
+                foreach ($transactions as $transaction) {
+                    $transaction->delete();
+                }
 
                 $errorMessage = 'Failed to initiate payment';
                 if (is_array($payment_data) && isset($payment_data['message'])) {
@@ -493,7 +540,8 @@ class PaymentController extends Controller
                 Log::error('SSL Commerz customer payment initiation failed', [
                     'payment_response' => $payment_options,
                     'decoded_response' => $payment_data,
-                    'booking_id' => $booking->id,
+                    'booking_ids' => $bookingIds,
+                    'total_amount' => $totalAmount,
                 ]);
 
                 return response()->json([
@@ -503,9 +551,25 @@ class PaymentController extends Controller
             }
 
         } catch (\Throwable $e) {
+            // Clean up any transactions that were created before the error
+            if (isset($transactions) && is_array($transactions) && !empty($transactions)) {
+                foreach ($transactions as $transaction) {
+                    try {
+                        $transaction->delete();
+                    } catch (\Exception $deleteError) {
+                        Log::warning('Failed to delete transaction during error cleanup', [
+                            'transaction_id' => $transaction->id ?? 'unknown',
+                            'error' => $deleteError->getMessage(),
+                        ]);
+                    }
+                }
+            }
+
             Log::error('SSL Commerz customer payment initiation failed: ' . $e->getMessage(), [
                 'data' => $request->all(),
                 'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
 
             return response()->json([
@@ -532,12 +596,12 @@ class PaymentController extends Controller
                 'all_params' => $request->all(),
             ]);
 
-            // Find transaction by tran_id in notes
-            $transaction = PaymentTransaction::where('notes', 'like', '%' . $tranId . '%')
+            // Find all transactions by tran_id in notes (for multiple bookings)
+            $transactions = PaymentTransaction::where('notes', 'like', '%' . $tranId . '%')
                 ->where('status', 'pending')
-                ->first();
+                ->get();
 
-            if (!$transaction) {
+            if ($transactions->isEmpty()) {
                 Log::error('SSL Commerz success: Transaction not found', ['tran_id' => $tranId]);
                 $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
                 // Try to determine redirect based on value_d parameter
@@ -549,6 +613,9 @@ class PaymentController extends Controller
                 return $this->htmlRedirect($redirectUrl);
             }
 
+            // Use first transaction for type checking
+            $primaryTransaction = $transactions->first();
+
             // Use official SSL Commerz library for validation
             $sslc = new SslCommerzNotification();
             $validation = $sslc->orderValidate($request->all(), $tranId, $amount, $currency);
@@ -558,36 +625,56 @@ class PaymentController extends Controller
 
                 // Check payment type
                 $isCustomerPayment = $request->input('value_d') === 'customer_payment' 
-                    || $transaction->transaction_type === 'customer_payment';
+                    || $primaryTransaction->transaction_type === 'customer_payment';
                 $isAdminToWorkerPayment = $request->input('value_d') === 'admin_to_worker_payment'
-                    || ($transaction->transaction_type === 'online_payment' && strpos($transaction->notes, 'Admin to Worker') !== false);
+                    || ($primaryTransaction->transaction_type === 'online_payment' && strpos($primaryTransaction->notes, 'Admin to Worker') !== false);
 
-                // Update transaction status
-                $transaction->update([
-                    'status' => 'completed',
-                    'processed_at' => now(),
-                    'notes' => $transaction->notes . "\nSSL Commerz Val ID: " . ($request->input('val_id') ?? 'N/A') . "\nVerified: " . now(),
-                ]);
+                // Update all transaction statuses
+                foreach ($transactions as $transaction) {
+                    $transaction->update([
+                        'status' => 'completed',
+                        'processed_at' => now(),
+                        'notes' => $transaction->notes . "\nSSL Commerz Val ID: " . ($request->input('val_id') ?? 'N/A') . "\nVerified: " . now(),
+                    ]);
+                }
 
                 // Update booking status to 'paid' if it's a customer payment
-                if ($isCustomerPayment && $transaction->booking_id) {
-                    // Use direct database update to avoid any datetime casting issues with scheduled_at
-                    // This ensures scheduled_at is not re-processed during the update
-                    // Only update status and payment_method, explicitly exclude scheduled_at
-                    DB::table('booking')
-                        ->where('id', $transaction->booking_id)
-                        ->where('status', '!=', 'paid')
-                        ->update([
-                            'status' => 'paid',
-                            'payment_method' => 'online',
-                            'updated_at' => now(),
-                        ]);
+                if ($isCustomerPayment) {
+                    // Get booking IDs from value_a (comma-separated) or from transactions
+                    $bookingIdsParam = $request->input('value_a');
+                    $bookingIds = [];
                     
-                    // Log for debugging
-                    Log::info('Booking updated after payment', [
-                        'booking_id' => $transaction->booking_id,
-                        'scheduled_at_before' => DB::table('booking')->where('id', $transaction->booking_id)->value('scheduled_at'),
-                    ]);
+                    if ($bookingIdsParam && strpos($bookingIdsParam, ',') !== false) {
+                        // Multiple booking IDs (comma-separated)
+                        $bookingIds = array_map('intval', explode(',', $bookingIdsParam));
+                    } else {
+                        // Single booking ID or get from transactions
+                        if ($bookingIdsParam) {
+                            $bookingIds = [intval($bookingIdsParam)];
+                        } else {
+                            $bookingIds = $transactions->pluck('booking_id')->filter()->unique()->toArray();
+                        }
+                    }
+
+                    if (!empty($bookingIds)) {
+                        // Use direct database update to avoid any datetime casting issues with scheduled_at
+                        // This ensures scheduled_at is not re-processed during the update
+                        // Only update status and payment_method, explicitly exclude scheduled_at
+                        DB::table('booking')
+                            ->whereIn('id', $bookingIds)
+                            ->where('status', '!=', 'paid')
+                            ->update([
+                                'status' => 'paid',
+                                'payment_method' => 'online',
+                                'updated_at' => now(),
+                            ]);
+                    
+                        // Log for debugging
+                        Log::info('Bookings updated after payment', [
+                            'booking_ids' => $bookingIds,
+                            'transaction_count' => $transactions->count(),
+                        ]);
+                    }
                 }
 
                 DB::commit();
@@ -596,11 +683,11 @@ class PaymentController extends Controller
                 
                 // Redirect based on payment type
                 if ($isCustomerPayment) {
-                    $redirectUrl = $frontendUrl . '/customer/my-booking?status=success&transaction_id=' . $transaction->id;
+                    $redirectUrl = $frontendUrl . '/customer/my-booking?status=success&transaction_id=' . $primaryTransaction->id;
                 } elseif ($isAdminToWorkerPayment) {
-                    $redirectUrl = $frontendUrl . '/payments?status=success&transaction_id=' . $transaction->id;
+                    $redirectUrl = $frontendUrl . '/payments?status=success&transaction_id=' . $primaryTransaction->id;
                 } else {
-                    $redirectUrl = $frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $transaction->id;
+                    $redirectUrl = $frontendUrl . '/worker/submit-payment?status=success&transaction_id=' . $primaryTransaction->id;
                 }
                 
                 Log::info('Payment validated successfully, redirecting to frontend', [
