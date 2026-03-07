@@ -237,41 +237,64 @@ class BookingController extends Controller
                 ], 401);
             }
 
-            // Validate the request - allow paid, confirmed, or cancelled
+            // Validate the request - allow paid, confirmed, cancelled, or pending (for reactivation)
             $request->validate([
-                'status' => 'required|in:paid,confirmed,cancelled',
+                'status' => 'required|in:paid,confirmed,cancelled,pending',
             ]);
 
             $newStatus = $request->input('status');
             $currentStatus = $booking->status;
 
-            // Status transition rules:
-            // - cancelled: only from pending
-            // - confirmed: from pending
-            // - paid: from pending or confirmed (when payment is received)
-            if ($newStatus === 'cancelled' && $currentStatus !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot cancel a booking that is already confirmed, paid, or cancelled'
-                ], 400);
-            }
-
-            if ($newStatus === 'confirmed' && $currentStatus !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot confirm a booking that is already confirmed, paid, or cancelled'
-                ], 400);
-            }
-
-            if ($newStatus === 'paid' && !in_array($currentStatus, ['pending', 'confirmed'])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Can only mark pending or confirmed bookings as paid'
-                ], 400);
-            }
-
-            // Check if user is Moderator or Admin - they have full access
+            // Check if user is Moderator or Admin - they have full access including reactivation
             $isModeratorOrAdmin = in_array($user->role, ['Moderator', 'Admin']);
+
+            // Status transition rules:
+            // - cancelled: only from pending (unless admin/moderator reactivating)
+            // - confirmed: from pending (or from cancelled if admin/moderator reactivating)
+            // - paid: from pending or confirmed (when payment is received)
+            // - pending: from cancelled (only for admin/moderator reactivation)
+            
+            // Allow admins/moderators to reactivate cancelled bookings
+            if ($isModeratorOrAdmin && $currentStatus === 'cancelled') {
+                // Admins can reactivate cancelled bookings to pending or confirmed
+                if (!in_array($newStatus, ['pending', 'confirmed'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Can only reactivate cancelled bookings to pending or confirmed status'
+                    ], 400);
+                }
+                // Allow the transition - skip other validation rules
+            } else {
+                // Standard status transition rules for non-reactivation cases
+                if ($newStatus === 'cancelled' && $currentStatus !== 'pending') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot cancel a booking that is already confirmed, paid, or cancelled'
+                    ], 400);
+                }
+
+                if ($newStatus === 'confirmed' && $currentStatus !== 'pending') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot confirm a booking that is already confirmed, paid, or cancelled'
+                    ], 400);
+                }
+
+                if ($newStatus === 'paid' && !in_array($currentStatus, ['pending', 'confirmed'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Can only mark pending or confirmed bookings as paid'
+                    ], 400);
+                }
+
+                // Prevent changing to pending from non-cancelled status (pending is only for reactivation)
+                if ($newStatus === 'pending' && $currentStatus !== 'cancelled') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Can only set status to pending when reactivating a cancelled booking'
+                    ], 400);
+                }
+            }
             
             if ($isModeratorOrAdmin) {
                 // Moderators and Admins can update any booking
